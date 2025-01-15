@@ -1,0 +1,193 @@
+local player = game.Players.LocalPlayer
+
+-- Create ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.ResetOnSpawn = false
+
+-- Main Transparent Rectangular Window
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 500, 0, 300)
+MainFrame.Position = UDim2.new(0.5, -250, 0.5, -150)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 60)
+MainFrame.BackgroundTransparency = 0.3
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+-- Rounded Corners
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = MainFrame
+
+-- Title Bar
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, 0, 0, 40)
+TitleLabel.BackgroundColor3 = Color3.fromRGB(15, 25, 50)
+TitleLabel.BackgroundTransparency = 0.2
+TitleLabel.Text = "Justine Hub | University"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = 20
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = MainFrame
+
+-- Minimize Button (-)
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Size = UDim2.new(0, 40, 0, 30)
+MinimizeButton.Position = UDim2.new(1, -80, 0, 5)
+MinimizeButton.Text = "-"
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(25, 50, 100)
+MinimizeButton.BackgroundTransparency = 0.2
+MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.TextSize = 22
+MinimizeButton.Parent = MainFrame
+
+-- Close Button (X)
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 40, 0, 30)
+CloseButton.Position = UDim2.new(1, -40, 0, 5)
+CloseButton.Text = "X"
+CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseButton.BackgroundTransparency = 0.2
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextSize = 18
+CloseButton.Parent = MainFrame
+
+local MinimizeCorner = Instance.new("UICorner")
+MinimizeCorner.CornerRadius = UDim.new(0, 5)
+MinimizeCorner.Parent = MinimizeButton
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 5)
+CloseCorner.Parent = CloseButton
+
+-- Minimize Button Functionality
+MinimizeButton.MouseButton1Click:Connect(function()
+    if MainFrame.Size == UDim2.new(0, 500, 0, 40) then
+        MainFrame.Size = UDim2.new(0, 500, 0, 300)  -- Expand
+    else
+        MainFrame.Size = UDim2.new(0, 500, 0, 40)   -- Minimize
+    end
+end)
+
+-- Close Button Functionality
+CloseButton.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()  -- Closes the UI when clicked
+end)
+
+-- Function to add a button to a tab
+function UILibrary:AddButton(tab, buttonName, callback)
+    local button = Instance.new("TextButton")
+    button.Parent = tab
+    button.Size = UDim2.new(0, 200, 0, 40)
+    button.Position = UDim2.new(0, 20, 0, 20) -- You can adjust this based on layout
+    button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    button.Text = buttonName
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 16
+
+    -- Button click event
+    button.MouseButton1Click:Connect(function()
+        callback()  -- Execute the callback when button is clicked
+    end)
+    
+    -- Return button for further customization if needed
+    return button
+end
+
+-- Function to add a slider to a tab
+function UILibrary:AddSlider(tab, sliderName, minValue, maxValue, defaultValue, callback)
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Parent = tab
+    sliderFrame.Size = UDim2.new(0, 200, 0, 40)
+    sliderFrame.Position = UDim2.new(0, 20, 0, 70)  -- Adjust position based on previous element
+    sliderFrame.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+
+    local sliderBar = Instance.new("Frame")
+    sliderBar.Parent = sliderFrame
+    sliderBar.Size = UDim2.new(1, 0, 0, 5)
+    sliderBar.Position = UDim2.new(0, 0, 0.5, -2)
+    sliderBar.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+
+    local sliderHandle = Instance.new("Frame")
+    sliderHandle.Parent = sliderBar
+    sliderHandle.Size = UDim2.new(0, 10, 0, 10)
+    sliderHandle.Position = UDim2.new(0, (defaultValue / maxValue) * 200 - 5, 0, -2)  -- Position based on default value
+    sliderHandle.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+
+    -- Slider drag event
+    local dragging = false
+    sliderHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+
+    sliderHandle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    sliderFrame.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local xPos = math.clamp(input.Position.X - sliderFrame.Position.X.Offset, 0, 200)  -- Constrain the slider handle
+            sliderHandle.Position = UDim2.new(0, xPos - 5, 0, -2)  -- Adjust handle position
+            local value = math.floor((xPos / 200) * (maxValue - minValue) + minValue)  -- Calculate value from slider position
+            callback(value)  -- Call the callback with the updated value
+        end
+    end)
+    
+    -- Return slider for further customization if needed
+    return sliderFrame
+end
+
+-- Function to add a toggle to a tab
+function UILibrary:AddToggle(tab, toggleName, defaultState, callback)
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Parent = tab
+    toggleFrame.Size = UDim2.new(0, 200, 0, 40)
+    toggleFrame.Position = UDim2.new(0, 20, 0, 120)  -- Adjust position based on previous element
+    toggleFrame.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+
+    local toggleLabel = Instance.new("TextLabel")
+    toggleLabel.Parent = toggleFrame
+    toggleLabel.Size = UDim2.new(0, 150, 0, 40)
+    toggleLabel.BackgroundTransparency = 1
+    toggleLabel.Text = toggleName
+    toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleLabel.TextSize = 16
+    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local toggleSwitch = Instance.new("TextButton")
+    toggleSwitch.Parent = toggleFrame
+    toggleSwitch.Size = UDim2.new(0, 40, 0, 40)
+    toggleSwitch.Position = UDim2.new(1, -50, 0, 0)  -- Positioned to the right of the label
+    toggleSwitch.BackgroundColor3 = defaultState and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    toggleSwitch.Text = defaultState and "ON" or "OFF"
+    toggleSwitch.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleSwitch.TextSize = 16
+
+    -- Toggle event
+    toggleSwitch.MouseButton1Click:Connect(function()
+        local newState = toggleSwitch.Text == "OFF"
+        toggleSwitch.Text = newState and "ON" or "OFF"
+        toggleSwitch.BackgroundColor3 = newState and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        callback(newState)  -- Call the callback with the new state
+    end)
+    
+    -- Return toggle for further customization if needed
+    return toggleSwitch
+end
+
+-- Function to add a dropdown to a tab
+function UILibrary:AddDropdown(tab, dropdownName, options, defaultOption, callback)
+    local dropdownFrame = Instance.new("Frame")
+    dropdownFrame.Parent = tab
+    dropdownFrame.Size = UDim2.new(0, 200, 0, 40)
+    dropdownFrame.Position = UDim2.new(0, 20, 0, 170)  -- Adjust position based on previous element
+    dropdownFrame.BackgroundColor3 = Color3.fromRGB(70, 70, 70
