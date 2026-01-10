@@ -1,6 +1,7 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
---// Fixes: corrected active tab indicator, prevented glow/stroke overflow, unified corners, no keyboard shortcuts
+--// Updates: removed top-bar outline, added Section & Label API
+--// Section header text is blue; labels are white with dark rounded background
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -8,7 +9,7 @@ KazeUI.__index = KazeUI
 --// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UIS = game:GetService("UserInputService") -- still required for draggable behavior
+local UIS = game:GetService("UserInputService") -- required for drag InputChanged
 local LP = Players.LocalPlayer
 
 --// Create ScreenGui
@@ -123,7 +124,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	--// Top Bar
+	--// Top Bar (NO outline under the top bar — removed divider)
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 56)
@@ -192,40 +193,6 @@ function KazeUI:CreateWindow(config)
 	Content.Size = UDim2.new(1, 0, 1, -56)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
-
-	--// HORIZONTAL NEON DIVIDER (tuned so it doesn't overflow)
-	local TopDividerGlow = Instance.new("Frame")
-	TopDividerGlow.Name = "TopDividerGlow"
-	TopDividerGlow.Size = UDim2.new(1, -12, 0, 6) -- leave a small padding so glow doesn't hit outer corners
-	TopDividerGlow.Position = UDim2.new(0, 6, 0, 0)
-	TopDividerGlow.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
-	TopDividerGlow.BackgroundTransparency = 0.92
-	TopDividerGlow.ZIndex = 5
-	TopDividerGlow.Parent = Content
-	Instance.new("UICorner", TopDividerGlow).CornerRadius = UDim.new(0, 6)
-
-	local TopDivider = Instance.new("Frame")
-	TopDivider.Name = "TopDivider"
-	TopDivider.Size = UDim2.new(1, -12, 0, 2)
-	TopDivider.Position = UDim2.new(0, 6, 0, 2)
-	TopDivider.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
-	TopDivider.BorderSizePixel = 0
-	TopDivider.ZIndex = 6
-	TopDivider.Parent = Content
-
-	local TopDividerStroke = Instance.new("UIStroke")
-	TopDividerStroke.Thickness = 2.5
-	TopDividerStroke.Color = Color3.fromRGB(0, 160, 255)
-	TopDividerStroke.Parent = TopDivider
-	TopDividerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-	spawn(function()
-		while TopDividerStroke.Parent do
-			local t = TweenService:Create(TopDividerStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
-			t:Play()
-			break
-		end
-	end)
 
 	--// MINI BUTTON (60x60)
 	local MiniButton = Instance.new("ImageButton")
@@ -561,7 +528,7 @@ function KazeUI:CreateWindow(config)
 	api.Window = Window
 	api.ScreenGui = ScreenGui
 
-	-- AddTab(titleOrConfig) -> returns tab object with :SetActive()
+	-- AddTab(titleOrConfig) -> returns tab object with :SetActive(), :AddSection()
 	function api:AddTab(titleOrConfig)
 		local title, iconId
 		if type(titleOrConfig) == "table" then
@@ -584,6 +551,19 @@ function KazeUI:CreateWindow(config)
 		page.Parent = Pages
 		page.Visible = false
 
+		-- create an inner content frame for layout within the page
+		local pageContent = Instance.new("Frame")
+		pageContent.Name = "Content"
+		pageContent.Size = UDim2.new(1, -24, 1, -24)
+		pageContent.Position = UDim2.new(0, 12, 0, 12)
+		pageContent.BackgroundTransparency = 1
+		pageContent.Parent = page
+
+		local pageLayout = Instance.new("UIListLayout")
+		pageLayout.Parent = pageContent
+		pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		pageLayout.Padding = UDim.new(0, 16)
+
 		-- store references
 		tabs[order] = { ButtonHolder = holder, Button = btn, Icon = btnIcon, Label = label, ActiveIndicator = activeIndicator }
 		pages[order] = page
@@ -598,7 +578,7 @@ function KazeUI:CreateWindow(config)
 			activateTab(1)
 		end
 
-		-- tab object with colon-call friendly SetActive
+		-- tab object with colon-call friendly SetActive and AddSection
 		local tabObj = {}
 		tabObj.Button = btn
 		tabObj.Page = page
@@ -607,6 +587,95 @@ function KazeUI:CreateWindow(config)
 
 		function tabObj:SetActive()
 			activateTab(order)
+		end
+
+		-- Adds a section to the tab page
+		-- usage:
+		-- local s = tab:AddSection("PLAYER STATS")
+		-- local lbl = s:AddLabel("Status: Active")
+		function tabObj:AddSection(sectionTitle)
+			local section = {}
+			-- holder frame for section (for background + spacing)
+			local sectionFrame = Instance.new("Frame")
+			sectionFrame.Size = UDim2.new(1, 0, 0, 80)
+			sectionFrame.BackgroundTransparency = 1
+			sectionFrame.LayoutOrder = #pageContent:GetChildren() + 1
+			sectionFrame.Parent = pageContent
+
+			-- Section Title (blue)
+			local titleLabel = Instance.new("TextLabel")
+			titleLabel.Size = UDim2.new(1, 0, 0, 24)
+			titleLabel.Position = UDim2.new(0, 0, 0, 0)
+			titleLabel.BackgroundTransparency = 1
+			titleLabel.Text = tostring(sectionTitle or "SECTION")
+			titleLabel.Font = Enum.Font.GothamBold
+			titleLabel.TextSize = 18
+			titleLabel.TextColor3 = Color3.fromRGB(0, 160, 255) -- blue
+			titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+			titleLabel.Parent = sectionFrame
+
+			-- Container for section items (stacked)
+			local itemsFrame = Instance.new("Frame")
+			itemsFrame.Size = UDim2.new(1, 0, 0, 48)
+			itemsFrame.Position = UDim2.new(0, 0, 0, 28)
+			itemsFrame.BackgroundTransparency = 1
+			itemsFrame.Parent = sectionFrame
+
+			local itemsLayout = Instance.new("UIListLayout")
+			itemsLayout.Parent = itemsFrame
+			itemsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+			itemsLayout.Padding = UDim.new(0, 8)
+
+			-- helper to add label inside section (white text over dark rounded bg)
+			function section:AddLabel(text)
+				local lblHolder = Instance.new("Frame")
+				lblHolder.Size = UDim2.new(1, 0, 0, 40)
+				lblHolder.BackgroundTransparency = 1
+				lblHolder.LayoutOrder = #itemsFrame:GetChildren() + 1
+				lblHolder.Parent = itemsFrame
+
+				local lblBg = Instance.new("Frame")
+				lblBg.Size = UDim2.new(1, -8, 1, 0)
+				lblBg.Position = UDim2.new(0, 4, 0, 0)
+				lblBg.BackgroundColor3 = Color3.fromRGB(30, 30, 33)
+				lblBg.BorderSizePixel = 0
+				lblBg.ZIndex = 7
+				lblBg.Parent = lblHolder
+				local lblBgCorner = Instance.new("UICorner", lblBg)
+				lblBgCorner.CornerRadius = UDim.new(0, 8)
+
+				local lblText = Instance.new("TextLabel")
+				lblText.Size = UDim2.new(1, -16, 1, 0)
+				lblText.Position = UDim2.new(0, 8, 0, 0)
+				lblText.BackgroundTransparency = 1
+				lblText.Text = tostring(text or "")
+				lblText.Font = Enum.Font.Gotham
+				lblText.TextSize = 16
+				lblText.TextColor3 = Color3.fromRGB(235, 235, 235) -- white
+				lblText.TextXAlignment = Enum.TextXAlignment.Left
+				lblText.Parent = lblBg
+				lblText.ZIndex = 8
+
+				-- return a small API for the label
+				local labelObj = {}
+				labelObj.Frame = lblHolder
+				labelObj.Background = lblBg
+				labelObj.Label = lblText
+
+				function labelObj:SetText(newText)
+					lblText.Text = tostring(newText or "")
+				end
+
+				return labelObj
+			end
+
+			-- return section API
+			section.Frame = sectionFrame
+			section.Title = titleLabel
+			section.Items = itemsFrame
+			setmetatable(section, { __index = section })
+
+			return section
 		end
 
 		return tabObj
