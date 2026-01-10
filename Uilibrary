@@ -1,6 +1,8 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
---// Fixes: prevent divider/glow from overflowing rounded corners, make tab text bolder & fit longer labels
+--// Fixes: tab label readability for long text (bold + TextScaled),
+--//        prevent divider/glow and tab strokes from overflowing rounded corners,
+--//        tightened corner radii so bottom-left corner looks correct
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -8,7 +10,7 @@ KazeUI.__index = KazeUI
 --// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UIS = game:GetService("UserInputService") -- still required for dragging
+local UIS = game:GetService("UserInputService") -- required for drag InputChanged
 local LP = Players.LocalPlayer
 
 --// Create ScreenGui
@@ -136,7 +138,7 @@ function KazeUI:CreateWindow(config)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = Window
 	local topCorner = Instance.new("UICorner", TopBar)
-	topCorner.CornerRadius = UDim.new(0, 14)
+	topCorner.CornerRadius = UDim.new(0, 14) -- keep same curvature
 
 	MakeDraggable(TopBar, Window)
 
@@ -192,11 +194,20 @@ function KazeUI:CreateWindow(config)
 	Close.Parent = TopBar
 	Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
 
+	-- content area (inner container prevents glow/stroke overflow against window corners)
 	local Content = Instance.new("Frame")
-	Content.Position = UDim2.fromOffset(0, 56)
+	Content.Name = "InnerContent"
+	Content.Position = UDim2.new(0, 0, 0, 56)
 	Content.Size = UDim2.new(1, 0, 1, -56)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
+	-- add an inner padded frame to keep neon/glow away from rounded corners
+	local Padded = Instance.new("Frame")
+	Padded.Name = "Padded"
+	Padded.Size = UDim2.new(1, -WINDOW_PADDING*2, 1, -(TOP_PADDING + BOTTOM_PADDING))
+	Padded.Position = UDim2.new(0, WINDOW_PADDING, 0, TOP_PADDING)
+	Padded.BackgroundTransparency = 1
+	Padded.Parent = Content
 
 	--// MINI BUTTON (60x60)
 	local MiniButton = Instance.new("ImageButton")
@@ -343,11 +354,13 @@ function KazeUI:CreateWindow(config)
 	local TAB_WIDTH = 140
 	local TabsContainer = Instance.new("Frame")
 	TabsContainer.Name = "TabsContainer"
-	TabsContainer.Size = UDim2.new(0, TAB_WIDTH, 1, 0)
-	TabsContainer.Position = UDim2.new(0, 0, 0, 0)
+	-- inset tabs container so strokes don't touch window corner
+	TabsContainer.Size = UDim2.new(0, TAB_WIDTH - WINDOW_PADDING, 1, 0)
+	TabsContainer.Position = UDim2.new(0, WINDOW_PADDING, 0, 0)
 	TabsContainer.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	TabsContainer.BorderSizePixel = 0
-	TabsContainer.Parent = Content
+	TabsContainer.Parent = Padded
+	-- keep small corner on holder buttons instead of container to avoid clipping strokes
 
 	local TabsScroll = Instance.new("ScrollingFrame")
 	TabsScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -361,9 +374,9 @@ function KazeUI:CreateWindow(config)
 
 	-- Add safe top/bottom padding so tabs never touch rounded corners
 	local tabsPadding = Instance.new("UIPadding")
-	tabsPadding.PaddingTop = UDim.new(0, TOP_PADDING - 6) -- tuned with topbar spacing
-	tabsPadding.PaddingBottom = UDim.new(0, BOTTOM_PADDING - 6)
-	tabsPadding.PaddingLeft = UDim.new(0, 8)
+	tabsPadding.PaddingTop = UDim.new(0, 8)
+	tabsPadding.PaddingBottom = UDim.new(0, 8)
+	tabsPadding.PaddingLeft = UDim.new(0, 4)
 	tabsPadding.Parent = TabsScroll
 
 	local tabsLayout = Instance.new("UIListLayout")
@@ -379,25 +392,25 @@ function KazeUI:CreateWindow(config)
 	end
 	tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabsCanvas)
 
-	-- Vertical neon divider (tuned so it stays inside padded area and rounded corners)
+	-- Vertical neon divider (drawn inside Padded so it won't overflow window corners)
 	local DividerGlow = Instance.new("Frame")
 	DividerGlow.Name = "DividerGlow"
-	DividerGlow.Size = UDim2.new(0, 8, 1, -(TOP_PADDING + BOTTOM_PADDING))
-	DividerGlow.Position = UDim2.new(0, TAB_WIDTH - 3, 0, TOP_PADDING)
+	DividerGlow.Size = UDim2.new(0, 8, 1, 0)
+	DividerGlow.Position = UDim2.new(0, TabsContainer.Size.X.Offset + 2, 0, 0)
 	DividerGlow.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
 	DividerGlow.BackgroundTransparency = 0.92
 	DividerGlow.ZIndex = 5
 	Instance.new("UICorner", DividerGlow).CornerRadius = UDim.new(0, 4)
-	DividerGlow.Parent = Content
+	DividerGlow.Parent = Padded
 
 	local Divider = Instance.new("Frame")
 	Divider.Name = "Divider"
-	Divider.Size = UDim2.new(0, 2, 1, -(TOP_PADDING + BOTTOM_PADDING))
-	Divider.Position = UDim2.new(0, TAB_WIDTH, 0, TOP_PADDING)
+	Divider.Size = UDim2.new(0, 2, 1, 0)
+	Divider.Position = UDim2.new(0, TabsContainer.Size.X.Offset + 4, 0, 0)
 	Divider.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
 	Divider.BorderSizePixel = 0
 	Divider.ZIndex = 6
-	Divider.Parent = Content
+	Divider.Parent = Padded
 
 	local DividerStroke = Instance.new("UIStroke")
 	DividerStroke.Thickness = 2.5
@@ -407,19 +420,19 @@ function KazeUI:CreateWindow(config)
 
 	spawn(function()
 		while DividerStroke.Parent do
-			local t = TweenService:Create(DividerStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
+			local t = TweenService:Create(DividerStroke, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
 			t:Play()
 			break
 		end
 	end)
 
-	-- Pages container (page content padded to avoid topbar)
+	-- Pages container
 	local Pages = Instance.new("Frame")
 	Pages.Name = "Pages"
-	Pages.Size = UDim2.new(1, -TAB_WIDTH, 1, 0)
-	Pages.Position = UDim2.new(0, TAB_WIDTH, 0, 0)
+	Pages.Size = UDim2.new(1, -(TabsContainer.Size.X.Offset + WINDOW_PADDING), 1, 0)
+	Pages.Position = UDim2.new(0, TabsContainer.Size.X.Offset + WINDOW_PADDING, 0, 0)
 	Pages.BackgroundTransparency = 1
-	Pages.Parent = Content
+	Pages.Parent = Padded
 
 	-- Keep track of tabs and pages
 	local tabs = {}
@@ -430,31 +443,32 @@ function KazeUI:CreateWindow(config)
 	local function makeTabButton(name, iconImage, order)
 		tabsCounter = tabsCounter + 1
 		local holder = Instance.new("Frame")
-		holder.Size = UDim2.new(1, -16, 0, 48)
+		holder.Size = UDim2.new(1, -8, 0, 48)
 		holder.LayoutOrder = tabsCounter
 		holder.BackgroundTransparency = 1
 		holder.Parent = TabsScroll
 		holder.ZIndex = 6
 
-		-- faint glow inside holder
-		local glow = Instance.new("Frame")
-		glow.Size = UDim2.new(1, 0, 1, 0)
-		glow.Position = UDim2.new(0, 0, 0, 0)
-		glow.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
-		glow.BackgroundTransparency = 0.92
-		glow.ZIndex = 5
-		local glowCorner = Instance.new("UICorner", glow)
-		glowCorner.CornerRadius = UDim.new(0, 6)
-		glow.Parent = holder
-
 		-- outer stroke (drawn on holder so it doesn't get clipped by inner UICorner)
-		local holderCorner = Instance.new("UICorner", holder)
-		holderCorner.CornerRadius = UDim.new(0, 6)
 		local holderStroke = Instance.new("UIStroke")
 		holderStroke.Thickness = 2
 		holderStroke.Color = Color3.fromRGB(0, 160, 255)
 		holderStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		holderStroke.Parent = holder
+
+		local holderCorner = Instance.new("UICorner", holder)
+		holderCorner.CornerRadius = UDim.new(0, 6)
+
+		-- faint glow inside holder (inset so it doesn't overflow)
+		local glow = Instance.new("Frame")
+		glow.Size = UDim2.new(1, -4, 1, -4)
+		glow.Position = UDim2.new(0, 2, 0, 2)
+		glow.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+		glow.BackgroundTransparency = 0.93
+		glow.ZIndex = 5
+		local glowCorner = Instance.new("UICorner", glow)
+		glowCorner.CornerRadius = UDim.new(0, 6)
+		glow.Parent = holder
 
 		-- inner button inset so outer stroke + glow are visible
 		local btn = Instance.new("TextButton")
@@ -480,19 +494,18 @@ function KazeUI:CreateWindow(config)
 		local iconCorner = Instance.new("UICorner", icon)
 		iconCorner.CornerRadius = UDim.new(1, 0)
 
-		-- label inside button
+		-- label inside button (make bold and scale to fit long text)
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.new(1, -56, 1, 0)
 		label.Position = UDim2.new(0, 52, 0, 0)
 		label.BackgroundTransparency = 1
 		label.Text = name or "Tab"
-		-- make tab text bolder & readable for long strings:
-		label.Font = Enum.Font.GothamBold   -- bolder font
-		label.TextSize = 14                 -- will be used as max when TextScaled = true
-		label.TextScaled = true             -- scales down to fit longer text
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 18
+		label.TextScaled = true           -- scale down so long labels fit
 		label.TextWrapped = false
 		label.TextTruncate = Enum.TextTruncate.AtEnd
-		label.TextColor3 = Color3.fromRGB(235, 235, 235) -- bright white for high contrast
+		label.TextColor3 = Color3.fromRGB(235, 235, 235) -- bright white
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextYAlignment = Enum.TextYAlignment.Center
 		label.Parent = btn
@@ -500,8 +513,8 @@ function KazeUI:CreateWindow(config)
 
 		-- active indicator (left vertical bar)
 		local activeIndicator = Instance.new("Frame")
-		activeIndicator.Size = UDim2.new(0, 6, 1, 0)
-		activeIndicator.Position = UDim2.new(0, 0, 0, 0)
+		activeIndicator.Size = UDim2.new(0, 6, 1, -8) -- slightly inset top/bottom so it never hits corners
+		activeIndicator.Position = UDim2.new(0, 0, 0, 4)
 		activeIndicator.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
 		activeIndicator.BorderSizePixel = 0
 		activeIndicator.Visible = false
@@ -513,7 +526,7 @@ function KazeUI:CreateWindow(config)
 		-- pulse the holder stroke for neon effect
 		spawn(function()
 			while holderStroke.Parent do
-				local t = TweenService:Create(holderStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
+				local t = TweenService:Create(holderStroke, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
 				t:Play()
 				break
 			end
@@ -572,13 +585,11 @@ function KazeUI:CreateWindow(config)
 		-- create an inner content frame for layout within the page
 		local pageContent = Instance.new("Frame")
 		pageContent.Name = "Content"
-		-- keep a larger bottom offset to avoid bottom stroke overlap and top offset to avoid TopBar
 		pageContent.Size = UDim2.new(1, -WINDOW_PADDING*2, 1, -(TOP_PADDING + BOTTOM_PADDING))
-		pageContent.Position = UDim2.new(0, WINDOW_PADDING, 0, TOP_PADDING)
+		pageContent.Position = UDim2.new(0, WINDOW_PADDING, 0, 0)
 		pageContent.BackgroundTransparency = 1
 		pageContent.Parent = page
 
-		-- UIListLayout for sections
 		local pageLayout = Instance.new("UIListLayout")
 		pageLayout.Parent = pageContent
 		pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -613,9 +624,6 @@ function KazeUI:CreateWindow(config)
 		end
 
 		-- Adds a section to the tab page
-		-- usage:
-		-- local s = tab:AddSection("PLAYER STATS")
-		-- local lbl = s:AddLabel("Status: Active")
 		function tabObj:AddSection(sectionTitle)
 			local section = {}
 			-- increment section counter and set LayoutOrder deterministically
