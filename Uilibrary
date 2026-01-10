@@ -1,8 +1,7 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
 --// Added: Strict Texture ID Sanitizer + 60x60 Minimize ImageButton (draggable, ZIndex 999)
---// Added: Left-side scrollable tabs with shortcut/register API
---// Fixes: neon/glow for horizontal + vertical dividers, tab stroke + removed corner clipping on tabs container
+--// Added: Left-side scrollable tabs with shortcut/register API (NO keyboard shortcuts included)
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -10,7 +9,7 @@ KazeUI.__index = KazeUI
 --// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UIS = game:GetService("UserInputService")
+local UIS = game:GetService("UserInputService") -- required for drag InputChanged
 local LP = Players.LocalPlayer
 
 --// Create ScreenGui
@@ -36,8 +35,6 @@ UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
 --// Texture ID Sanitizer
--- Accepts strings like "rbxassetid://123", "Rbxtextureid://123", "123", etc.
--- Extracts digits with string.gsub(id, "%D", "") and returns "rbxassetid://<digits>" or "" if none found.
 local function FormatImage(id)
 	if not id then return "" end
 	id = tostring(id)
@@ -99,10 +96,7 @@ function KazeUI:CreateWindow(config)
 
 	-- Open Button Config (ENFORCED to 60x60 for mobile playability)
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
-	-- Enforce exact 60x60 size (UDim2.fromOffset) as requested
 	local MiniButtonSize = UDim2.fromOffset(60, 60)
-
-	local Callback = config.Callback
 
 	--// Main Window
 	local Window = Instance.new("Frame")
@@ -197,20 +191,20 @@ function KazeUI:CreateWindow(config)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
 
-	--// ADD A NEON HORIZONTAL DIVIDER (glowing) just under TopBar
+	--// HORIZONTAL NEON DIVIDER
 	local TopDividerGlow = Instance.new("Frame")
 	TopDividerGlow.Name = "TopDividerGlow"
-	TopDividerGlow.Size = UDim2.new(1, 0, 0, 6) -- thicker, will act as glow behind
+	TopDividerGlow.Size = UDim2.new(1, 0, 0, 6)
 	TopDividerGlow.Position = UDim2.new(0, 0, 0, 0)
 	TopDividerGlow.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
-	TopDividerGlow.BackgroundTransparency = 0.92 -- mostly transparent so it looks like glow
+	TopDividerGlow.BackgroundTransparency = 0.92
 	TopDividerGlow.ZIndex = 5
 	TopDividerGlow.Parent = Content
 
 	local TopDivider = Instance.new("Frame")
 	TopDivider.Name = "TopDivider"
-	TopDivider.Size = UDim2.new(1, 0, 0, 2) -- visible thin line
-	TopDivider.Position = UDim2.new(0, 0, 0, 2) -- slight offset to show centered in glow
+	TopDivider.Size = UDim2.new(1, 0, 0, 2)
+	TopDivider.Position = UDim2.new(0, 0, 0, 2)
 	TopDivider.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 6
@@ -222,7 +216,6 @@ function KazeUI:CreateWindow(config)
 	TopDividerStroke.Parent = TopDivider
 	TopDividerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
-	-- pulse the top divider stroke color for neon effect
 	spawn(function()
 		while TopDividerStroke.Parent do
 			local t = TweenService:Create(TopDividerStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
@@ -234,14 +227,13 @@ function KazeUI:CreateWindow(config)
 	--// MINI BUTTON (60x60 Square ImageButton)
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
-	MiniButton.Size = MiniButtonSize -- enforced exact 60x60
-	-- Default position (can be dragged by user)
+	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
-	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- solid background
+	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	MiniButton.BorderSizePixel = 0
 	MiniButton.Visible = false
-	MiniButton.Parent = ScreenGui -- parent directly to ScreenGui to remain visible when Window hidden
-	MiniButton.ZIndex = 999 -- ensure never hidden behind other UI
+	MiniButton.Parent = ScreenGui
+	MiniButton.ZIndex = 999
 	MiniButton.ScaleType = Enum.ScaleType.Slice
 	MiniButton.SliceCenter = Rect.new(4,4,60,60)
 
@@ -249,7 +241,6 @@ function KazeUI:CreateWindow(config)
 	miniUICorner.CornerRadius = UDim.new(0, 12)
 	miniUICorner.Parent = MiniButton
 
-	-- Padding so the icon can be large but not cover the neon outline
 	local miniPadding = Instance.new("UIPadding")
 	miniPadding.PaddingTop = UDim.new(0, 4)
 	miniPadding.PaddingBottom = UDim.new(0, 4)
@@ -258,7 +249,6 @@ function KazeUI:CreateWindow(config)
 	miniPadding.Parent = MiniButton
 
 	local MiniIcon = Instance.new("ImageLabel")
-	-- Fill the padded area and center the icon
 	MiniIcon.Size = UDim2.fromScale(1, 1)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -269,8 +259,7 @@ function KazeUI:CreateWindow(config)
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Color = Color3.fromRGB(0, 160, 255)
-	MiniStroke.Thickness = 2.5 -- neon thickness
-	-- ensure the glow stays on the outside edge
+	MiniStroke.Thickness = 2.5
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	MiniStroke.Parent = MiniButton
 	MiniStroke.LineJoinMode = Enum.LineJoinMode.Bevel
@@ -283,31 +272,24 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- Make both TopBar and MiniButton draggable (MiniButton draggable by itself)
 	MakeDraggable(TopBar, Window)
 	MakeDraggable(MiniButton, MiniButton)
 
-	-- Minimize behavior: hide Window, show 60x60 ImageButton (parented to ScreenGui)
 	Minimize.MouseButton1Click:Connect(function()
 		Window.Visible = false
-		-- show the standalone 60x60 ImageButton (ensure exact size)
 		MiniButton.Visible = true
 		MiniButton.Size = UDim2.fromOffset(0, 0)
-		-- fixed: use EasingStyle.Back and EasingDirection.Out instead of non-existent BackOut
 		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
 	end)
 
-	-- Clicking the 60x60 ImageButton restores the window
 	MiniButton.MouseButton1Click:Connect(function()
 		MiniButton.Visible = false
 		Window.Visible = true
-		-- animate window open from 0 size to the main size
 		Window.Size = UDim2.fromOffset(0, 0)
-		-- fixed: use EasingStyle.Back and EasingDirection.Out instead of non-existent BackOut
 		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(650, 420)}):Play()
 	end)
 
-	-- Close Logic with confirmation overlay
+	-- Close confirmation
 	local function ShowCloseConfirm()
 		Minimize.Active = false
 		Close.Active = false
@@ -387,7 +369,6 @@ function KazeUI:CreateWindow(config)
 	Close.MouseButton1Click:Connect(ShowCloseConfirm)
 
 	--// TABS (Left Side)
-	-- left panel width
 	local TAB_WIDTH = 140
 	local TabsContainer = Instance.new("Frame")
 	TabsContainer.Name = "TabsContainer"
@@ -396,10 +377,8 @@ function KazeUI:CreateWindow(config)
 	TabsContainer.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	TabsContainer.BorderSizePixel = 0
 	TabsContainer.Parent = Content
-	-- NOTE: removed UICorner here to avoid rounding/clipping at top edge causing tab stroke to be cut off
-	-- Instance.new("UICorner", TabsContainer).CornerRadius = UDim.new(0, 12)
+	-- NOTE: intentionally no UICorner to avoid clipping neon strokes
 
-	-- Scrollable list for tabs
 	local TabsScroll = Instance.new("ScrollingFrame")
 	TabsScroll.Size = UDim2.new(1, 0, 1, 0)
 	TabsScroll.BackgroundTransparency = 1
@@ -408,25 +387,24 @@ function KazeUI:CreateWindow(config)
 	TabsScroll.Parent = TabsContainer
 	TabsScroll.BorderSizePixel = 0
 	TabsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-	TabsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y -- fallback but we'll set canvas manually
+	TabsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
 	local tabsLayout = Instance.new("UIListLayout")
 	tabsLayout.Parent = TabsScroll
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0, 8)
 
-	-- adjust CanvasSize when content changes
 	local function updateTabsCanvas()
 		local totalY = tabsLayout.AbsoluteContentSize.Y
 		TabsScroll.CanvasSize = UDim2.new(0, 0, 0, totalY + 12)
 	end
 	tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabsCanvas)
 
-	-- Divider line (neon) between tabs and pages (vertical)
+	-- Vertical neon divider
 	local DividerGlow = Instance.new("Frame")
 	DividerGlow.Name = "DividerGlow"
-	DividerGlow.Size = UDim2.new(0, 8, 1, 0) -- wider glow behind
-	DividerGlow.Position = UDim2.new(0, TAB_WIDTH - 3, 0, 0) -- center glow behind thin line
+	DividerGlow.Size = UDim2.new(0, 8, 1, 0)
+	DividerGlow.Position = UDim2.new(0, TAB_WIDTH - 3, 0, 0)
 	DividerGlow.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
 	DividerGlow.BackgroundTransparency = 0.92
 	DividerGlow.ZIndex = 5
@@ -441,7 +419,6 @@ function KazeUI:CreateWindow(config)
 	Divider.ZIndex = 6
 	Divider.Parent = Content
 
-	-- add a neon stroke to the divider and pulse it
 	local DividerStroke = Instance.new("UIStroke")
 	DividerStroke.Thickness = 2.5
 	DividerStroke.Color = Color3.fromRGB(0, 160, 255)
@@ -456,7 +433,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- Right side pages container
+	-- Pages container
 	local Pages = Instance.new("Frame")
 	Pages.Name = "Pages"
 	Pages.Size = UDim2.new(1, -TAB_WIDTH, 1, 0)
@@ -471,12 +448,11 @@ function KazeUI:CreateWindow(config)
 
 	-- Style helper for tab button
 	local function makeTabButton(name, iconImage, order)
-		-- create a glow sibling frame so the neon stroke doesn't get clipped by any UICorner inside the button
-		local glowHolder = Instance.new("Frame")
-		glowHolder.Size = UDim2.new(1, -16, 0, 56)
-		glowHolder.BackgroundTransparency = 1
-		glowHolder.LayoutOrder = order or 1
-		glowHolder.Parent = TabsScroll
+		local holder = Instance.new("Frame")
+		holder.Size = UDim2.new(1, -16, 0, 56)
+		holder.BackgroundTransparency = 1
+		holder.LayoutOrder = order or 1
+		holder.Parent = TabsScroll
 
 		local glow = Instance.new("Frame")
 		glow.Size = UDim2.new(1, 0, 1, 0)
@@ -484,7 +460,7 @@ function KazeUI:CreateWindow(config)
 		glow.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
 		glow.BackgroundTransparency = 0.92
 		glow.ZIndex = 5
-		glow.Parent = glowHolder
+		glow.Parent = holder
 
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -16, 0, 56)
@@ -501,7 +477,6 @@ function KazeUI:CreateWindow(config)
 		corner.CornerRadius = UDim.new(0, 8)
 		corner.Parent = btn
 
-		-- add a UIStroke to the button to outline it with neon color
 		local btnStroke = Instance.new("UIStroke")
 		btnStroke.Thickness = 2
 		btnStroke.Color = Color3.fromRGB(0, 160, 255)
@@ -531,7 +506,6 @@ function KazeUI:CreateWindow(config)
 		label.Parent = btn
 		label.ZIndex = 7
 
-		-- active indicator (left bar)
 		local activeIndicator = Instance.new("Frame")
 		activeIndicator.Size = UDim2.new(0, 4, 1, 0)
 		activeIndicator.Position = UDim2.new(0, 0, 0, 0)
@@ -541,7 +515,6 @@ function KazeUI:CreateWindow(config)
 		activeIndicator.Parent = btn
 		activeIndicator.ZIndex = 8
 
-		-- make the glow pulse with the button stroke for a more neon look
 		spawn(function()
 			while btnStroke.Parent do
 				local t = TweenService:Create(btnStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
@@ -553,5 +526,91 @@ function KazeUI:CreateWindow(config)
 		return btn, icon, label, activeIndicator
 	end
 
+	-- Activate a tab by index
+	local function activateTab(idx)
+		if not idx then return end
+		for i = 1, #tabs do
+			local t = tabs[i]
+			if t and t.Button then
+				local active = (i == idx)
+				t.ActiveIndicator.Visible = active
+				t.Button.ZIndex = active and 10 or 6
+				if pages[i] then
+					pages[i].Visible = active
+				end
+			end
+		end
+		activeIndex = idx
+	end
+
+	-- Public API for the created window
+	local api = {}
+	api.Window = Window
+	api.ScreenGui = ScreenGui
+
+	-- AddTab(title, icon) -> returns tab object
+	function api:AddTab(titleOrConfig, icon)
+		local title = nil
+		local iconId = nil
+		if type(titleOrConfig) == "table" then
+			title = titleOrConfig.Title or "Tab"
+			iconId = titleOrConfig.Icon
+		else
+			title = tostring(titleOrConfig or "Tab")
+			iconId = icon
+		end
+
+		local order = #tabs + 1
+		local btn, btnIcon, label, activeIndicator = makeTabButton(title, iconId, order)
+
+		-- create the page for this tab
+		local page = Instance.new("Frame")
+		page.Name = ("Page_%d"):format(order)
+		page.Size = UDim2.new(1, 0, 1, 0)
+		page.Position = UDim2.new(0, 0, 0, 0)
+		page.BackgroundTransparency = 1
+		page.Parent = Pages
+		page.Visible = false
+
+		-- store references
+		tabs[order] = { Button = btn, Icon = btnIcon, Label = label, ActiveIndicator = activeIndicator }
+		pages[order] = page
+
+		-- clicking the tab activates it
+		btn.MouseButton1Click:Connect(function()
+			activateTab(order)
+		end)
+
+		-- If this is the first tab added, activate it automatically
+		if order == 1 then
+			activateTab(1)
+		end
+
+		-- return a simple tab object with references and helper
+		local tabObj = {
+			Button = btn,
+			Page = page,
+			Icon = btnIcon,
+			Label = label,
+			SetActive = function()
+				activateTab(order)
+			end
+		}
+		return tabObj
+	end
+
+	-- expose a simple close/hide functions
+	function api:Show()
+		Window.Visible = true
+	end
+	function api:Hide()
+		Window.Visible = false
+	end
+	function api:Destroy()
+		ScreenGui:Destroy()
+	end
+
+	return api
+end
 
 return KazeUI
