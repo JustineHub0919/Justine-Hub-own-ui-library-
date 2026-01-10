@@ -1,6 +1,6 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
---// Updates: fixed AddLabel ordering, added safe top padding for tabs/pages to avoid TopBar overlap
+--// Fixes: prevent divider/glow from overflowing rounded corners, make tab text bolder & fit longer labels
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -8,7 +8,7 @@ KazeUI.__index = KazeUI
 --// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UIS = game:GetService("UserInputService") -- required for drag InputChanged
+local UIS = game:GetService("UserInputService") -- still required for dragging
 local LP = Players.LocalPlayer
 
 --// Create ScreenGui
@@ -86,6 +86,11 @@ end
 --// CREATE WINDOW
 function KazeUI:CreateWindow(config)
 	config = config or {}
+
+	-- layout padding constants (keeps divider and tab areas inside rounded corners)
+	local WINDOW_PADDING = 12      -- left/right padding so glows don't reach rounded corners
+	local TOP_PADDING = 18        -- space from top (below TopBar)
+	local BOTTOM_PADDING = 18     -- space from bottom
 
 	-- Main Config
 	local Title = config.Title or "Kaze UI"
@@ -255,7 +260,7 @@ function KazeUI:CreateWindow(config)
 		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(650, 420)}):Play()
 	end)
 
-	-- Close confirmation (same as before)
+	-- Close confirmation
 	local function ShowCloseConfirm()
 		Minimize.Active = false
 		Close.Active = false
@@ -343,7 +348,6 @@ function KazeUI:CreateWindow(config)
 	TabsContainer.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	TabsContainer.BorderSizePixel = 0
 	TabsContainer.Parent = Content
-	-- intentionally no UICorner on TabsContainer
 
 	local TabsScroll = Instance.new("ScrollingFrame")
 	TabsScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -355,9 +359,10 @@ function KazeUI:CreateWindow(config)
 	TabsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 	TabsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
-	-- Add safe top padding so the first tab is not hidden by the top bar
+	-- Add safe top/bottom padding so tabs never touch rounded corners
 	local tabsPadding = Instance.new("UIPadding")
-	tabsPadding.PaddingTop = UDim.new(0, 12)
+	tabsPadding.PaddingTop = UDim.new(0, TOP_PADDING - 6) -- tuned with topbar spacing
+	tabsPadding.PaddingBottom = UDim.new(0, BOTTOM_PADDING - 6)
 	tabsPadding.PaddingLeft = UDim.new(0, 8)
 	tabsPadding.Parent = TabsScroll
 
@@ -374,11 +379,11 @@ function KazeUI:CreateWindow(config)
 	end
 	tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabsCanvas)
 
-	-- Vertical neon divider (tuned)
+	-- Vertical neon divider (tuned so it stays inside padded area and rounded corners)
 	local DividerGlow = Instance.new("Frame")
 	DividerGlow.Name = "DividerGlow"
-	DividerGlow.Size = UDim2.new(0, 8, 1, -12)
-	DividerGlow.Position = UDim2.new(0, TAB_WIDTH - 3, 0, 6)
+	DividerGlow.Size = UDim2.new(0, 8, 1, -(TOP_PADDING + BOTTOM_PADDING))
+	DividerGlow.Position = UDim2.new(0, TAB_WIDTH - 3, 0, TOP_PADDING)
 	DividerGlow.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
 	DividerGlow.BackgroundTransparency = 0.92
 	DividerGlow.ZIndex = 5
@@ -387,8 +392,8 @@ function KazeUI:CreateWindow(config)
 
 	local Divider = Instance.new("Frame")
 	Divider.Name = "Divider"
-	Divider.Size = UDim2.new(0, 2, 1, -12)
-	Divider.Position = UDim2.new(0, TAB_WIDTH, 0, 6)
+	Divider.Size = UDim2.new(0, 2, 1, -(TOP_PADDING + BOTTOM_PADDING))
+	Divider.Position = UDim2.new(0, TAB_WIDTH, 0, TOP_PADDING)
 	Divider.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
 	Divider.BorderSizePixel = 0
 	Divider.ZIndex = 6
@@ -408,7 +413,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- Pages container
+	-- Pages container (page content padded to avoid topbar)
 	local Pages = Instance.new("Frame")
 	Pages.Name = "Pages"
 	Pages.Size = UDim2.new(1, -TAB_WIDTH, 1, 0)
@@ -481,10 +486,15 @@ function KazeUI:CreateWindow(config)
 		label.Position = UDim2.new(0, 52, 0, 0)
 		label.BackgroundTransparency = 1
 		label.Text = name or "Tab"
-		label.Font = Enum.Font.Gotham
-		label.TextSize = 14
-		label.TextColor3 = Color3.fromRGB(220, 220, 220)
+		-- make tab text bolder & readable for long strings:
+		label.Font = Enum.Font.GothamBold   -- bolder font
+		label.TextSize = 14                 -- will be used as max when TextScaled = true
+		label.TextScaled = true             -- scales down to fit longer text
+		label.TextWrapped = false
+		label.TextTruncate = Enum.TextTruncate.AtEnd
+		label.TextColor3 = Color3.fromRGB(235, 235, 235) -- bright white for high contrast
 		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextYAlignment = Enum.TextYAlignment.Center
 		label.Parent = btn
 		label.ZIndex = 8
 
@@ -563,8 +573,8 @@ function KazeUI:CreateWindow(config)
 		local pageContent = Instance.new("Frame")
 		pageContent.Name = "Content"
 		-- keep a larger bottom offset to avoid bottom stroke overlap and top offset to avoid TopBar
-		pageContent.Size = UDim2.new(1, -24, 1, -36)
-		pageContent.Position = UDim2.new(0, 12, 0, 18) -- increased top padding so first section isn't covered
+		pageContent.Size = UDim2.new(1, -WINDOW_PADDING*2, 1, -(TOP_PADDING + BOTTOM_PADDING))
+		pageContent.Position = UDim2.new(0, WINDOW_PADDING, 0, TOP_PADDING)
 		pageContent.BackgroundTransparency = 1
 		pageContent.Parent = page
 
