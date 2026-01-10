@@ -1,7 +1,6 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
---// Updates: removed top-bar outline, added Section & Label API
---// Section header text is blue; labels are white with dark rounded background
+--// Updates: fixed AddLabel ordering, added safe top padding for tabs/pages to avoid TopBar overlap
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -124,7 +123,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	--// Top Bar (NO outline under the top bar — removed divider)
+	--// Top Bar (NO horizontal outline)
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 56)
@@ -132,7 +131,7 @@ function KazeUI:CreateWindow(config)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = Window
 	local topCorner = Instance.new("UICorner", TopBar)
-	topCorner.CornerRadius = UDim.new(0, 14) -- keep same curvature
+	topCorner.CornerRadius = UDim.new(0, 14)
 
 	MakeDraggable(TopBar, Window)
 
@@ -256,7 +255,7 @@ function KazeUI:CreateWindow(config)
 		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(650, 420)}):Play()
 	end)
 
-	-- Close confirmation
+	-- Close confirmation (same as before)
 	local function ShowCloseConfirm()
 		Minimize.Active = false
 		Close.Active = false
@@ -335,7 +334,7 @@ function KazeUI:CreateWindow(config)
 	end
 	Close.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	--// TABS (Left Side) - improved structure to avoid stroke clipping & overflow
+	--// TABS (Left Side)
 	local TAB_WIDTH = 140
 	local TabsContainer = Instance.new("Frame")
 	TabsContainer.Name = "TabsContainer"
@@ -344,7 +343,7 @@ function KazeUI:CreateWindow(config)
 	TabsContainer.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	TabsContainer.BorderSizePixel = 0
 	TabsContainer.Parent = Content
-	-- intentionally no UICorner on TabsContainer (avoids clipping strokes)
+	-- intentionally no UICorner on TabsContainer
 
 	local TabsScroll = Instance.new("ScrollingFrame")
 	TabsScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -356,11 +355,19 @@ function KazeUI:CreateWindow(config)
 	TabsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 	TabsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
+	-- Add safe top padding so the first tab is not hidden by the top bar
+	local tabsPadding = Instance.new("UIPadding")
+	tabsPadding.PaddingTop = UDim.new(0, 12)
+	tabsPadding.PaddingLeft = UDim.new(0, 8)
+	tabsPadding.Parent = TabsScroll
+
 	local tabsLayout = Instance.new("UIListLayout")
 	tabsLayout.Parent = TabsScroll
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabsLayout.Padding = UDim.new(0, 10) -- slightly larger spacing
+	tabsLayout.Padding = UDim.new(0, 10) -- spacing between tabs
 
+	-- keep a reliable counter for layout order (avoid #GetChildren problems)
+	local tabsCounter = 0
 	local function updateTabsCanvas()
 		local totalY = tabsLayout.AbsoluteContentSize.Y
 		TabsScroll.CanvasSize = UDim2.new(0, 0, 0, totalY + 12)
@@ -416,9 +423,10 @@ function KazeUI:CreateWindow(config)
 
 	-- Style helper for tab button (holder -> glow -> inner button)
 	local function makeTabButton(name, iconImage, order)
+		tabsCounter = tabsCounter + 1
 		local holder = Instance.new("Frame")
 		holder.Size = UDim2.new(1, -16, 0, 48)
-		holder.LayoutOrder = order or 1
+		holder.LayoutOrder = tabsCounter
 		holder.BackgroundTransparency = 1
 		holder.Parent = TabsScroll
 		holder.ZIndex = 6
@@ -554,15 +562,20 @@ function KazeUI:CreateWindow(config)
 		-- create an inner content frame for layout within the page
 		local pageContent = Instance.new("Frame")
 		pageContent.Name = "Content"
-		pageContent.Size = UDim2.new(1, -24, 1, -24)
-		pageContent.Position = UDim2.new(0, 12, 0, 12)
+		-- keep a larger bottom offset to avoid bottom stroke overlap and top offset to avoid TopBar
+		pageContent.Size = UDim2.new(1, -24, 1, -36)
+		pageContent.Position = UDim2.new(0, 12, 0, 18) -- increased top padding so first section isn't covered
 		pageContent.BackgroundTransparency = 1
 		pageContent.Parent = page
 
+		-- UIListLayout for sections
 		local pageLayout = Instance.new("UIListLayout")
 		pageLayout.Parent = pageContent
 		pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		pageLayout.Padding = UDim.new(0, 16)
+
+		-- reliable section counter per pageContent
+		pageContent._sectionCount = 0
 
 		-- store references
 		tabs[order] = { ButtonHolder = holder, Button = btn, Icon = btnIcon, Label = label, ActiveIndicator = activeIndicator }
@@ -595,11 +608,15 @@ function KazeUI:CreateWindow(config)
 		-- local lbl = s:AddLabel("Status: Active")
 		function tabObj:AddSection(sectionTitle)
 			local section = {}
+			-- increment section counter and set LayoutOrder deterministically
+			pageContent._sectionCount = pageContent._sectionCount + 1
+			local sectionIndex = pageContent._sectionCount
+
 			-- holder frame for section (for background + spacing)
 			local sectionFrame = Instance.new("Frame")
 			sectionFrame.Size = UDim2.new(1, 0, 0, 80)
 			sectionFrame.BackgroundTransparency = 1
-			sectionFrame.LayoutOrder = #pageContent:GetChildren() + 1
+			sectionFrame.LayoutOrder = sectionIndex
 			sectionFrame.Parent = pageContent
 
 			-- Section Title (blue)
@@ -621,17 +638,23 @@ function KazeUI:CreateWindow(config)
 			itemsFrame.BackgroundTransparency = 1
 			itemsFrame.Parent = sectionFrame
 
+			-- UIListLayout for items and a reliable counter
 			local itemsLayout = Instance.new("UIListLayout")
 			itemsLayout.Parent = itemsFrame
 			itemsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 			itemsLayout.Padding = UDim.new(0, 8)
+			itemsFrame._itemCount = 0
 
 			-- helper to add label inside section (white text over dark rounded bg)
 			function section:AddLabel(text)
+				-- increase itemCount and set LayoutOrder deterministically
+				itemsFrame._itemCount = itemsFrame._itemCount + 1
+				local itemIndex = itemsFrame._itemCount
+
 				local lblHolder = Instance.new("Frame")
 				lblHolder.Size = UDim2.new(1, 0, 0, 40)
 				lblHolder.BackgroundTransparency = 1
-				lblHolder.LayoutOrder = #itemsFrame:GetChildren() + 1
+				lblHolder.LayoutOrder = itemIndex
 				lblHolder.Parent = itemsFrame
 
 				local lblBg = Instance.new("Frame")
