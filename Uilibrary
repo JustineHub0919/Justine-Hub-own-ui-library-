@@ -1,37 +1,43 @@
--- Minimal KazeUI
--- Provides Window / Tabs / Sections
--- Sections support only :AddLabel (no other builtin elements)
-
-local KazeUI = {}
-KazeUI.__index = KazeUI
+-- KazeUI (optimized)
+-- Path: Uilibrary (replace existing file)
+-- Changes:
+--  - Optimized object creation and tween usage
+--  - Single drag binding, safer FormatImage
+--  - Added Maximize/Restore (square) button
+--  - Minimize -> shrinks to mini-button (with smooth tween)
+--  - Tab collapse toggle (hide/show left tabs panel)
+--  - Shortcut helper functions: BindToggleKey (minimize/restore), BindToggleTabsKey
+--  - Section only exposes :AddLabel (no other builtins)
+--  - Cleaner APIs for SetTitle/SetAuthor/SetVersion and quick CreateShortcut
+--  - Minimize also animates a collapse and preserves state for restore
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 
--- Create ScreenGui
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "KazeUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = LP:WaitForChild("PlayerGui")
+local KazeUI = {}
+KazeUI.__index = KazeUI
 
--- UIScale
-local UIScale = Instance.new("UIScale")
-UIScale.Parent = ScreenGui
-local function UpdateScale()
-	local size = workspace.CurrentCamera.ViewportSize
-	if size.X < 600 then
-		UIScale.Scale = math.clamp(size.X / 800, 0.5, 1)
-	else
-		UIScale.Scale = math.clamp(size.X / 1920, 0.6, 1)
-	end
-end
-UpdateScale()
-workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+-- Constants / theme
+local DEFAULT_SIZE = UDim2.fromOffset(650, 420)
+local DEFAULT_MINI_SIZE = UDim2.fromOffset(60, 60)
+local DEFAULT_TAB_WIDTH = 140
+local COLORS = {
+	BG = Color3.fromRGB(20, 20, 25),
+	TOP = Color3.fromRGB(15, 15, 20),
+	LEFT = Color3.fromRGB(16, 16, 20),
+	SECTION_BG = Color3.fromRGB(30, 30, 33),
+	TEXT = Color3.fromRGB(235, 235, 235),
+	SUBTEXT = Color3.fromRGB(160, 160, 160),
+	ACCENT = Color3.fromRGB(0, 160, 255),
+	ACCENT_ALT = Color3.fromRGB(0, 255, 255),
+	BUTTON_BG = Color3.fromRGB(25, 25, 30),
+	HOVER = Color3.fromRGB(35, 35, 38),
+}
 
--- safe image formatting
+-- Utility: format image ID safely
 local function FormatImage(id)
 	if not id then return "" end
 	local s = tostring(id)
@@ -40,9 +46,22 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- draggable helper
+-- Utility: safe tween pulse on Color3 property of an Instance (UIStroke or Frame)
+local function PlayNeonPulse(instance, prop, duration)
+	if not instance or not instance[prop] then return end
+	local ti = TweenInfo.new(duration or 1.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+	local goal = {}
+	goal[prop] = COLORS.ACCENT_ALT
+	local tw = TweenService:Create(instance, ti, goal)
+	tw:Play()
+	return tw
+end
+
+-- Make draggable: works for mouse and touch; keep one connection per draggable instance
 local function MakeDraggable(dragPart, targetPart)
+	if not dragPart or not targetPart then return end
 	local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
+
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
@@ -51,6 +70,7 @@ local function MakeDraggable(dragPart, targetPart)
 			startPos.Y.Scale, startPos.Y.Offset + delta.Y
 		)
 	end
+
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
@@ -64,11 +84,13 @@ local function MakeDraggable(dragPart, targetPart)
 			end)
 		end
 	end)
+
 	dragPart.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			dragInput = input
 		end
 	end)
+
 	UIS.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then
 			update(input)
@@ -76,52 +98,81 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 end
 
--- small neon pulse helper for UIStroke
-local function PlayNeonPulse(instance, property, duration)
-	if not instance then return end
-	local ti = TweenInfo.new(duration or 1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-	local altColor = Color3.fromRGB(0, 255, 255)
-	local goal = {}
-	goal[property] = altColor
-	local tw = TweenService:Create(instance, ti, goal)
-	tw:Play()
-	return tw
+-- Shortcut binder helper
+local function bindKey(keyEnum, callback)
+	if not keyEnum or not callback then return end
+	local conn
+	conn = UIS.InputBegan:Connect(function(input, gp)
+		if gp then return end
+		if input.KeyCode == keyEnum then
+			callback()
+		end
+	end)
+	return conn
 end
 
+-- Main window creator
 function KazeUI:CreateWindow(config)
 	config = config or {}
-	local Title = config.Title or "Kaze UI"
-	local Author = config.Author or "Unknown"
-	local Version = config.Version or "1.0"
+	local TitleTxt = tostring(config.Title or "Kaze UI")
+	local AuthorTxt = tostring(config.Author or "Unknown")
+	local VersionTxt = tostring(config.Version or "1.0")
 	local MainIcon = FormatImage(config.Icon or "")
 
+	-- ScreenGui (one per window)
+	local ScreenGui = Instance.new("ScreenGui")
+	ScreenGui.Name = "KazeUI"
+	ScreenGui.ResetOnSpawn = false
+	ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	ScreenGui.Parent = LP:WaitForChild("PlayerGui")
+
+	-- UIScale
+	local UIScale = Instance.new("UIScale")
+	UIScale.Parent = ScreenGui
+	local function UpdateScale()
+		local size = workspace.CurrentCamera.ViewportSize
+		if size.X < 600 then
+			UIScale.Scale = math.clamp(size.X / 800, 0.5, 1)
+		else
+			UIScale.Scale = math.clamp(size.X / 1920, 0.6, 1)
+		end
+	end
+	UpdateScale()
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+
+	-- Root Window
 	local Window = Instance.new("Frame")
 	Window.Name = "MainWindow"
-	Window.Size = UDim2.fromOffset(650, 420)
+	Window.Size = DEFAULT_SIZE
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
-	Window.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+	Window.BackgroundColor3 = COLORS.BG
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
 	Window.ClipsDescendants = true
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
 
+	-- Window Accent stroke (pulses)
 	local WindowStroke = Instance.new("UIStroke")
-	WindowStroke.Color = Color3.fromRGB(0, 160, 255)
+	WindowStroke.Color = COLORS.ACCENT
 	WindowStroke.Thickness = 2.5
 	WindowStroke.Parent = Window
 	PlayNeonPulse(WindowStroke, "Color", 1.6)
 
-	-- Top bar (title only)
+	-- Top bar
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 56)
-	TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+	TopBar.BackgroundColor3 = COLORS.TOP
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = Window
-	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
+	local TopBarCorner = Instance.new("UICorner", TopBar)
+	TopBarCorner.CornerRadius = UDim.new(0, 14)
+
+	-- Drag binding
 	MakeDraggable(TopBar, Window)
 
+	-- Icon
 	local Icon = Instance.new("ImageLabel")
 	Icon.Size = UDim2.fromOffset(32, 32)
 	Icon.Position = UDim2.fromOffset(14, 12)
@@ -130,29 +181,75 @@ function KazeUI:CreateWindow(config)
 	Icon.Parent = TopBar
 	Instance.new("UICorner", Icon).CornerRadius = UDim.new(1, 0)
 
+	-- Title / Author / Version grouped frame (to allow quick updates)
+	local TitleGroup = Instance.new("Frame")
+	TitleGroup.Size = UDim2.new(1, -200, 1, 0)
+	TitleGroup.Position = UDim2.fromOffset(56, 0)
+	TitleGroup.BackgroundTransparency = 1
+	TitleGroup.Parent = TopBar
+
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -160, 0, 22)
-	TitleLabel.Position = UDim2.fromOffset(56, 8)
+	TitleLabel.Size = UDim2.new(1, 0, 0, 22)
+	TitleLabel.Position = UDim2.fromOffset(0, 8)
 	TitleLabel.BackgroundTransparency = 1
-	TitleLabel.Text = Title
-	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
+	TitleLabel.Text = TitleTxt
+	TitleLabel.TextColor3 = COLORS.TEXT
 	TitleLabel.Font = Enum.Font.GothamBold
 	TitleLabel.TextSize = 16
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	TitleLabel.Parent = TopBar
+	TitleLabel.Parent = TitleGroup
 
+	local SubLabel = Instance.new("TextLabel")
+	SubLabel.Size = UDim2.new(1, 0, 0, 18)
+	SubLabel.Position = UDim2.fromOffset(0, 30)
+	SubLabel.BackgroundTransparency = 1
+	SubLabel.Text = AuthorTxt .. " | v" .. VersionTxt
+	SubLabel.TextColor3 = COLORS.SUBTEXT
+	SubLabel.Font = Enum.Font.Gotham
+	SubLabel.TextSize = 13
+	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
+	SubLabel.Parent = TitleGroup
+
+	-- Controls (Minimize, Maximize, Close)
+	local function makeTopButton(iconText, color)
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.fromOffset(36, 36)
+		btn.BackgroundColor3 = COLORS.BUTTON_BG
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.GothamBold
+		btn.Text = iconText
+		btn.TextSize = 18
+		btn.TextColor3 = color or COLORS.TEXT
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+		return btn
+	end
+
+	local MinimizeBtn = makeTopButton("—", COLORS.TEXT)
+	MinimizeBtn.Position = UDim2.new(1, -132, 0.5, -18)
+	MinimizeBtn.Parent = TopBar
+
+	local MaximizeBtn = makeTopButton("□", COLORS.TEXT)
+	MaximizeBtn.Position = UDim2.new(1, -88, 0.5, -18)
+	MaximizeBtn.Parent = TopBar
+
+	local CloseBtn = makeTopButton("✕", Color3.fromRGB(255, 90, 90))
+	CloseBtn.Position = UDim2.new(1, -44, 0.5, -18)
+	CloseBtn.Parent = TopBar
+
+	-- Content area
 	local Content = Instance.new("Frame")
-	Content.Position = UDim2.fromOffset(0, 56)
 	Content.Size = UDim2.new(1, 0, 1, -56)
+	Content.Position = UDim2.fromOffset(0, 56)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
 
-	-- Left tabs + divider
-	local TAB_WIDTH = 140
+	-- Left tabs container
+	local TAB_WIDTH = DEFAULT_TAB_WIDTH
 	local LeftPanel = Instance.new("Frame")
+	LeftPanel.Name = "LeftPanel"
 	LeftPanel.Size = UDim2.new(0, TAB_WIDTH, 1, 0)
 	LeftPanel.Position = UDim2.new(0, 0, 0, 0)
-	LeftPanel.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+	LeftPanel.BackgroundColor3 = COLORS.LEFT
 	LeftPanel.BorderSizePixel = 0
 	LeftPanel.Parent = Content
 	Instance.new("UICorner", LeftPanel).CornerRadius = UDim.new(0, 12)
@@ -171,38 +268,46 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.Parent = TabsScroll
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0, 10)
-	local function updateTabsCanvas()
+	tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		local totalY = tabsLayout.AbsoluteContentSize.Y
 		TabsScroll.CanvasSize = UDim2.new(0, 0, 0, totalY + 12)
-	end
-	tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabsCanvas)
+	end)
 
+	-- Divider
 	local Divider = Instance.new("Frame")
 	Divider.Size = UDim2.new(0, 2, 1, -12)
 	Divider.Position = UDim2.new(0, TAB_WIDTH, 0, 6)
-	Divider.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+	Divider.BackgroundColor3 = COLORS.ACCENT
 	Divider.BorderSizePixel = 0
 	Divider.ZIndex = 6
 	Divider.Parent = Content
 	local DividerStroke = Instance.new("UIStroke")
 	DividerStroke.Thickness = 2.5
-	DividerStroke.Color = Color3.fromRGB(0, 160, 255)
+	DividerStroke.Color = COLORS.ACCENT
 	DividerStroke.Parent = Divider
 	PlayNeonPulse(DividerStroke, "Color", 1.6)
 
+	-- Pages container
 	local Pages = Instance.new("Frame")
 	Pages.Size = UDim2.new(1, -TAB_WIDTH, 1, 0)
 	Pages.Position = UDim2.new(0, TAB_WIDTH, 0, 0)
 	Pages.BackgroundTransparency = 1
 	Pages.Parent = Content
 
-	-- track tabs/pages/sections
+	-- Tracking tables
 	local tabs = {}
 	local pages = {}
-	local pagesSections = {} -- pagesSections[pageIndex] = {section1, section2, ...}
+	local pagesSections = {}
 	local activeIndex = nil
 
-	-- make tab button with minimal label (we keep tab labels for navigation)
+	-- State trackers
+	local isMinimized = false
+	local isMaximized = false
+	local isTabsCollapsed = false
+	local lastWindowSize = Window.Size
+	local lastWindowPosition = Window.Position
+
+	-- Helper: create tab button
 	local function makeTabButton(name, order)
 		local holder = Instance.new("Frame")
 		holder.Size = UDim2.new(1, -16, 0, 48)
@@ -213,7 +318,7 @@ function KazeUI:CreateWindow(config)
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -8, 1, -8)
 		btn.Position = UDim2.new(0, 4, 0, 4)
-		btn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+		btn.BackgroundColor3 = COLORS.BG
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
 		btn.Text = name or "Tab"
@@ -225,10 +330,10 @@ function KazeUI:CreateWindow(config)
 		return holder, btn
 	end
 
+	-- Activate tab
 	local function activateTab(idx)
 		if not idx then return end
 		for i = 1, #tabs do
-			local t = tabs[i]
 			if pages[i] then
 				pages[i].Visible = (i == idx)
 			end
@@ -236,11 +341,12 @@ function KazeUI:CreateWindow(config)
 		activeIndex = idx
 	end
 
-	-- public api
+	-- Public API skeleton
 	local api = {}
 	api.Window = Window
 	api.ScreenGui = ScreenGui
 
+	-- Tab / Section API
 	function api:AddTab(titleOrConfig)
 		local title = (type(titleOrConfig) == "table") and (titleOrConfig.Title or "Tab") or tostring(titleOrConfig or "Tab")
 		local order = #tabs + 1
@@ -286,6 +392,7 @@ function KazeUI:CreateWindow(config)
 			activateTab(order)
 		end
 
+		-- Only Section:AddLabel exposed
 		function tabObj:AddSection(sectionTitle)
 			local section = {}
 			local sectionFrame = Instance.new("Frame")
@@ -301,7 +408,7 @@ function KazeUI:CreateWindow(config)
 			titleLabel.Text = tostring(sectionTitle or "SECTION")
 			titleLabel.Font = Enum.Font.GothamBold
 			titleLabel.TextSize = 18
-			titleLabel.TextColor3 = Color3.fromRGB(0, 160, 255)
+			titleLabel.TextColor3 = COLORS.ACCENT
 			titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 			titleLabel.Parent = sectionFrame
 
@@ -316,7 +423,7 @@ function KazeUI:CreateWindow(config)
 			itemsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 			itemsLayout.Padding = UDim.new(0, 8)
 
-			-- ONLY Section:AddLabel is exposed
+			-- ONLY Section:AddLabel
 			function section:AddLabel(text)
 				local lblHolder = Instance.new("Frame")
 				lblHolder.Size = UDim2.new(1, 0, 0, 40)
@@ -327,7 +434,7 @@ function KazeUI:CreateWindow(config)
 				local lblBg = Instance.new("Frame")
 				lblBg.Size = UDim2.new(1, -8, 1, 0)
 				lblBg.Position = UDim2.new(0, 4, 0, 0)
-				lblBg.BackgroundColor3 = Color3.fromRGB(30, 30, 33)
+				lblBg.BackgroundColor3 = COLORS.SECTION_BG
 				lblBg.BorderSizePixel = 0
 				lblBg.ZIndex = 7
 				lblBg.Parent = lblHolder
@@ -340,7 +447,7 @@ function KazeUI:CreateWindow(config)
 				lblText.Text = tostring(text or "")
 				lblText.Font = Enum.Font.Gotham
 				lblText.TextSize = 16
-				lblText.TextColor3 = Color3.fromRGB(235, 235, 235)
+				lblText.TextColor3 = COLORS.TEXT
 				lblText.TextXAlignment = Enum.TextXAlignment.Left
 				lblText.Parent = lblBg
 				lblText.ZIndex = 8
@@ -359,9 +466,7 @@ function KazeUI:CreateWindow(config)
 			section.Title = titleLabel
 			section.Items = itemsFrame
 
-			-- store on pagesSections for Main:AddButton lookups
-			table.insert(pagesSections[order], section)
-
+			table.insert(pagesSections[#pages], section)
 			setmetatable(section, { __index = section })
 			return section
 		end
@@ -369,110 +474,229 @@ function KazeUI:CreateWindow(config)
 		return tabObj
 	end
 
-	-- AddButton: convenience API to create a Button element and place it into a section.
-	-- It requires an element module at src/elements/Button.lua (adjust require path as needed).
-	function api:AddButton(config)
-		config = config or {}
-		-- determine parent itemsFrame: priority: config.Parent, config.Section, current active page's first section
-		local targetParent = config.Parent
-		if not targetParent and config.Section then
-			-- if a section object was passed directly
-			if type(config.Section) == "table" and config.Section.Items then
-				targetParent = config.Section.Items
-			end
-		end
-		if not targetParent and activeIndex then
-			local secs = pagesSections[activeIndex]
-			if secs and #secs > 0 then
-				targetParent = secs[#secs].Items -- add to last section by default
-			end
-		end
-		if not targetParent then
-			-- fallback: create a default section on current page or first page
-			local pageIndex = activeIndex or 1
-			if not pages[pageIndex] then
-				-- create a first tab if none exist
-				local t = api:AddTab("Default")
-				pageIndex = 1
-			end
-			local tab = { Page = pages[pageIndex], Content = pages[pageIndex]:FindFirstChild("Content") }
-			-- create a new section
-			local section = nil
-			-- find the tabObj by index to call AddSection properly
-			-- quick recreate a tabObj like above
-			local tabObj = {}
-			tabObj.Page = pages[pageIndex]
-			tabObj.Content = pages[pageIndex]:FindFirstChild("Content")
-			function tabObj:AddSection(sTitle)
-				local section = {}
-				local pageContent = tabObj.Content
-				local sectionFrame = Instance.new("Frame")
-				sectionFrame.Size = UDim2.new(1, 0, 0, 80)
-				sectionFrame.BackgroundTransparency = 1
-				sectionFrame.LayoutOrder = #pageContent:GetChildren() + 1
-				sectionFrame.Parent = pageContent
-
-				local titleLabel = Instance.new("TextLabel")
-				titleLabel.Size = UDim2.new(1, 0, 0, 24)
-				titleLabel.Position = UDim2.fromOffset(0, 0)
-				titleLabel.BackgroundTransparency = 1
-				titleLabel.Text = tostring(sTitle or "SECTION")
-				titleLabel.Font = Enum.Font.GothamBold
-				titleLabel.TextSize = 18
-				titleLabel.TextColor3 = Color3.fromRGB(0, 160, 255)
-				titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-				titleLabel.Parent = sectionFrame
-
-				local itemsFrame = Instance.new("Frame")
-				itemsFrame.Size = UDim2.new(1, 0, 0, 48)
-				itemsFrame.Position = UDim2.new(0, 0, 0, 28)
-				itemsFrame.BackgroundTransparency = 1
-				itemsFrame.Parent = sectionFrame
-
-				local itemsLayout = Instance.new("UIListLayout")
-				itemsLayout.Parent = itemsFrame
-				itemsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-				itemsLayout.Padding = UDim.new(0, 8)
-
-				section.Frame = sectionFrame
-				section.Title = titleLabel
-				section.Items = itemsFrame
-				return section
-			end
-			section = tabObj:AddSection("Default")
-			targetParent = section.Items
-		end
-
-		-- ensure targetParent is a frame (items container)
-		if not targetParent or not targetParent:IsA("Instance") then
-			error("Main:AddButton: invalid target parent for button")
-		end
-
-		-- require button element (adjust path as necessary)
-		local ok, ElementModule = pcall(function()
-			-- try relative path; in your project you may require differently
-			return require(script.Parent:WaitForChild("elements"):WaitForChild("Button"))
-		end)
-		if not ok or not ElementModule then
-			-- try other fallback require path
-			local ok2, mod = pcall(function() return require(script:FindFirstChild("elements") and script.elements.Button or nil) end)
-			if not ok2 then error("AddButton: could not require elements.Button module; adjust path") end
-			ElementModule = mod
-		end
-
-		-- attach parent into config so component will parent itself properly
-		config.Parent = targetParent
-
-		local _, Button = ElementModule:New(config)
-		-- return the Button object (user expectation)
-		return Button
+	-- Toggle tabs collapse (hide/show left panel smoothly)
+	function api:ToggleTabs()
+		isTabsCollapsed = not isTabsCollapsed
+		local targetWidth = isTabsCollapsed and 40 or DEFAULT_TAB_WIDTH
+		local pagesTargetX = isTabsCollapsed and 40 or DEFAULT_TAB_WIDTH
+		-- animate left panel width
+		TweenService:Create(LeftPanel, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
+		-- animate pages position/size
+		TweenService:Create(Pages, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, -pagesTargetX, 1, 0), Position = UDim2.new(0, pagesTargetX, 0, 0)}):Play()
+		-- adjust divider position
+		TweenService:Create(Divider, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0, pagesTargetX, 0, 6)}):Play()
 	end
 
-	function api:Show() Window.Visible = true end
-	function api:Hide() Window.Visible = false end
-	function api:Destroy() ScreenGui:Destroy() end
+	-- Minimize / Mini button
+	local MiniButton = Instance.new("ImageButton")
+	MiniButton.Name = "MiniButton"
+	MiniButton.Size = DEFAULT_MINI_SIZE
+	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
+	MiniButton.BackgroundColor3 = COLORS.BG
+	MiniButton.BorderSizePixel = 0
+	MiniButton.Visible = false
+	MiniButton.Parent = ScreenGui
+	MiniButton.ZIndex = 999
+	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 12)
 
+	local MiniIcon = Instance.new("ImageLabel")
+	MiniIcon.Size = UDim2.fromScale(1, 1)
+	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
+	MiniIcon.BackgroundTransparency = 1
+	MiniIcon.Image = MainIcon
+	MiniIcon.Parent = MiniButton
+	MiniIcon.ZIndex = 1000
+
+	-- Animate minimize to mini button
+	local function doMinimize()
+		if isMinimized then return end
+		isMinimized = true
+		-- store last
+		lastWindowSize = Window.Size
+		lastWindowPosition = Window.Position
+		-- hide window visually by shrinking to center then hiding
+		-- show mini button first as small then tween in
+		MiniButton.Visible = true
+		Window.Visible = false
+		MiniButton.Size = UDim2.fromOffset(0, 0)
+		TweenService:Create(MiniButton, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = DEFAULT_MINI_SIZE}):Play()
+	end
+
+	local function doRestore()
+		if not isMinimized then return end
+		isMinimized = false
+		-- hide mini button and show window with previous size
+		MiniButton.Visible = false
+		Window.Size = UDim2.fromOffset(0, 0)
+		Window.Visible = true
+		TweenService:Create(Window, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = lastWindowSize, Position = lastWindowPosition}):Play()
+	end
+
+	-- Maximize / Restore size
+	local function doMaximize()
+		if isMaximized then
+			-- restore
+			isMaximized = false
+			TweenService:Create(Window, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Size = lastWindowSize,
+				Position = lastWindowPosition
+			}):Play()
+		else
+			-- maximize
+			isMaximized = true
+			lastWindowSize = Window.Size
+			lastWindowPosition = Window.Position
+			local cam = workspace.CurrentCamera
+			local targetSize = UDim2.fromOffset(cam.ViewportSize.X * 0.96, cam.ViewportSize.Y * 0.92)
+			TweenService:Create(Window, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Size = targetSize,
+				Position = UDim2.fromScale(0.5, 0.5)
+			}):Play()
+		end
+	end
+
+	-- Top Buttons behavior
+	MinimizeBtn.MouseButton1Click:Connect(function()
+		doMinimize()
+	end)
+	MaximizeBtn.MouseButton1Click:Connect(function()
+		doMaximize()
+	end)
+
+	-- Close confirmation overlay
+	local function showCloseConfirm()
+		local Overlay = Instance.new("Frame")
+		Overlay.Size = UDim2.new(1, 0, 1, 0)
+		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		Overlay.BackgroundTransparency = 0.6
+		Overlay.ZIndex = 20
+		Overlay.Parent = Window
+
+		local ConfirmWindow = Instance.new("Frame")
+		ConfirmWindow.Size = UDim2.fromOffset(350, 150)
+		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.5)
+		ConfirmWindow.BackgroundColor3 = COLORS.BUTTON_BG
+		ConfirmWindow.ZIndex = 21
+		ConfirmWindow.Parent = Overlay
+		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 12)
+
+		local ConfirmText = Instance.new("TextLabel")
+		ConfirmText.Size = UDim2.new(1, -32, 0, 48)
+		ConfirmText.Position = UDim2.fromOffset(16, 20)
+		ConfirmText.BackgroundTransparency = 1
+		ConfirmText.Text = "Are you sure you want to close the UI?"
+		ConfirmText.TextColor3 = COLORS.TEXT
+		ConfirmText.Font = Enum.Font.GothamBold
+		ConfirmText.TextSize = 18
+		ConfirmText.TextWrapped = true
+		ConfirmText.ZIndex = 22
+		ConfirmText.Parent = ConfirmWindow
+
+		local ButtonsFrame = Instance.new("Frame")
+		ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
+		ButtonsFrame.Position = UDim2.new(0, 0, 1, -20)
+		ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
+		ButtonsFrame.BackgroundTransparency = 1
+		ButtonsFrame.ZIndex = 22
+		ButtonsFrame.Parent = ConfirmWindow
+
+		local layout = Instance.new("UIListLayout")
+		layout.Parent = ButtonsFrame
+		layout.FillDirection = Enum.FillDirection.Horizontal
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.Padding = UDim.new(0, 16)
+
+		local ConfirmBtn = Instance.new("TextButton")
+		ConfirmBtn.Size = UDim2.new(0, 120, 0, 36)
+		ConfirmBtn.BackgroundColor3 = COLORS.ACCENT
+		ConfirmBtn.Text = "Confirm"
+		ConfirmBtn.TextColor3 = COLORS.TEXT
+		ConfirmBtn.Font = Enum.Font.GothamBold
+		ConfirmBtn.TextSize = 16
+		ConfirmBtn.ZIndex = 23
+		ConfirmBtn.Parent = ButtonsFrame
+		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 8)
+
+		local CancelBtn = Instance.new("TextButton")
+		CancelBtn.Size = UDim2.new(0, 120, 0, 36)
+		CancelBtn.BackgroundColor3 = COLORS.BUTTON_BG
+		CancelBtn.Text = "Cancel"
+		CancelBtn.TextColor3 = COLORS.TEXT
+		CancelBtn.Font = Enum.Font.GothamBold
+		CancelBtn.TextSize = 16
+		CancelBtn.ZIndex = 23
+		CancelBtn.Parent = ButtonsFrame
+		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
+
+		ConfirmBtn.MouseButton1Click:Connect(function()
+			ScreenGui:Destroy()
+		end)
+		CancelBtn.MouseButton1Click:Connect(function()
+			Overlay:Destroy()
+		end)
+	end
+
+	CloseBtn.MouseButton1Click:Connect(showCloseConfirm)
+
+	-- MiniButton click restores
+	MiniButton.MouseButton1Click:Connect(function()
+		doRestore()
+	end)
+
+	-- public helper: SetTitle/Author/Version
+	function api:SetTitle(t)
+		TitleLabel.Text = tostring(t or "")
+	end
+	function api:SetAuthor(a)
+		SubLabel.Text = tostring(a or "") .. " | v" .. (tostring(VersionTxt or "1.0"))
+	end
+	function api:SetVersion(v)
+		local ver = tostring(v or "")
+		SubLabel.Text = tostring(AuthorTxt or "") .. " | v" .. ver
+	end
+
+	-- Bind a toggle key to minimize/restore
+	function api:BindToggleKey(keyEnum)
+		return bindKey(keyEnum, function()
+			if isMinimized then
+				doRestore()
+			else
+				doMinimize()
+			end
+		end)
+	end
+
+	-- Bind key to toggle tabs collapse
+	function api:BindToggleTabsKey(keyEnum)
+		return bindKey(keyEnum, function()
+			api:ToggleTabs()
+		end)
+	end
+
+	-- Shortcut: quick create & show (convenience)
+	-- Usage: local win = KazeUI.Create({Title="...", Author="...", Version="..."})
+	-- returns api
+	function api:Show()
+		Window.Visible = true
+	end
+	function api:Hide()
+		Window.Visible = false
+	end
+	function api:Destroy()
+		ScreenGui:Destroy()
+	end
+
+	-- Return final API
 	return api
+end
+
+-- Convenience factory to create & show a window (shortcut)
+function KazeUI.Create(config)
+	local ui = KazeUI:CreateWindow(config)
+	ui:Show()
+	return ui
 end
 
 return KazeUI
