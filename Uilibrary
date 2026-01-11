@@ -2,6 +2,9 @@
 -- Window System (PC + Mobile)
 -- Improvements: optimized tweens, fixed bottom-left rounding (masked left panel),
 -- removed duplicate drag binding, safer FormatImage, cleaned up returns.
+-- Modified (2026-01-11 by assistant): simplified Section:AddLabel to only create a TextLabel,
+-- removed other label elements (topbar Title/SubLabel and tab text labels).
+-- CSS provided by user appended at bottom as a comment for button styling reference.
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -156,27 +159,7 @@ function KazeUI:CreateWindow(config)
 	Icon.Parent = TopBar
 	Instance.new("UICorner", Icon).CornerRadius = UDim.new(1, 0)
 
-	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -160, 0, 22)
-	TitleLabel.Position = UDim2.fromOffset(56, 8)
-	TitleLabel.BackgroundTransparency = 1
-	TitleLabel.Text = Title
-	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
-	TitleLabel.Font = Enum.Font.GothamBold
-	TitleLabel.TextSize = 16
-	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	TitleLabel.Parent = TopBar
-
-	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(1, -160, 0, 18)
-	SubLabel.Position = UDim2.fromOffset(56, 30)
-	SubLabel.BackgroundTransparency = 1
-	SubLabel.Text = Author .. " | v" .. Version
-	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
-	SubLabel.Font = Enum.Font.Gotham
-	SubLabel.TextSize = 13
-	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
-	SubLabel.Parent = TopBar
+	-- NOTE: TitleLabel and SubLabel removed per request; Section labels will be used instead.
 
 	local Minimize = Instance.new("TextButton")
 	Minimize.Size = UDim2.fromOffset(36, 36)
@@ -473,10 +456,10 @@ function KazeUI:CreateWindow(config)
 		local btnCorner = Instance.new("UICorner", btn)
 		btnCorner.CornerRadius = UDim.new(0, 5)
 
-		-- icon inside button
+		-- icon inside button (centered since label removed)
 		local icon = Instance.new("ImageLabel")
 		icon.Size = UDim2.fromOffset(32, 32)
-		icon.Position = UDim2.new(0, 8, 0.5, -16)
+		icon.Position = UDim2.new(0, 8, 0.5, -16) -- left aligned but text removed; keep unchanged for layout
 		icon.BackgroundTransparency = 1
 		icon.Image = FormatImage(iconImage or "")
 		icon.Parent = btn
@@ -484,18 +467,7 @@ function KazeUI:CreateWindow(config)
 		local iconCorner = Instance.new("UICorner", icon)
 		iconCorner.CornerRadius = UDim.new(1, 0)
 
-		-- label inside button
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.new(1, -56, 1, 0)
-		label.Position = UDim2.new(0, 52, 0, 0)
-		label.BackgroundTransparency = 1
-		label.Text = name or "Tab"
-		label.Font = Enum.Font.Gotham
-		label.TextSize = 14
-		label.TextColor3 = Color3.fromRGB(220, 220, 220)
-		label.TextXAlignment = Enum.TextXAlignment.Left
-		label.Parent = btn
-		label.ZIndex = 8
+		-- NOTE: Tab text label removed per request. Tabs now rely on icon-only navigation.
 
 		-- active indicator (left vertical bar)
 		local activeIndicator = Instance.new("Frame")
@@ -512,7 +484,7 @@ function KazeUI:CreateWindow(config)
 		-- pulse the holder stroke for neon effect
 		PlayNeonPulse(holderStroke, "Color", 1.6)
 
-		return holder, btn, icon, label, activeIndicator, holderStroke
+		return holder, btn, icon, nil, activeIndicator, holderStroke
 	end
 
 	-- Activate a tab by index
@@ -603,7 +575,7 @@ function KazeUI:CreateWindow(config)
 		-- Adds a section to the tab page
 		function tabObj:AddSection(sectionTitle)
 			local section = {}
-			-- holder frame for section (for background + spacing)
+			-- holder frame for section (for spacing)
 			local sectionFrame = Instance.new("Frame")
 			sectionFrame.Size = UDim2.new(1, 0, 0, 80)
 			sectionFrame.BackgroundTransparency = 1
@@ -634,44 +606,26 @@ function KazeUI:CreateWindow(config)
 			itemsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 			itemsLayout.Padding = UDim.new(0, 8)
 
-			-- helper to add label inside section (white text over dark rounded bg)
+			-- helper to add label inside section (now simplified: only a TextLabel)
 			function section:AddLabel(text)
-				local lblHolder = Instance.new("Frame")
-				lblHolder.Size = UDim2.new(1, 0, 0, 40)
-				lblHolder.BackgroundTransparency = 1
-				lblHolder.LayoutOrder = #itemsFrame:GetChildren() + 1
-				lblHolder.Parent = itemsFrame
-
-				local lblBg = Instance.new("Frame")
-				lblBg.Size = UDim2.new(1, -8, 1, 0)
-				lblBg.Position = UDim2.new(0, 4, 0, 0)
-				lblBg.BackgroundColor3 = Color3.fromRGB(30, 30, 33)
-				lblBg.BorderSizePixel = 0
-				lblBg.ZIndex = 7
-				lblBg.Parent = lblHolder
-				local lblBgCorner = Instance.new("UICorner", lblBg)
-				lblBgCorner.CornerRadius = UDim.new(0, 8)
-
-				local lblText = Instance.new("TextLabel")
-				lblText.Size = UDim2.new(1, -16, 1, 0)
-				lblText.Position = UDim2.new(0, 8, 0, 0)
-				lblText.BackgroundTransparency = 1
-				lblText.Text = tostring(text or "")
-				lblText.Font = Enum.Font.Gotham
-				lblText.TextSize = 16
-				lblText.TextColor3 = Color3.fromRGB(235, 235, 235) -- white
-				lblText.TextXAlignment = Enum.TextXAlignment.Left
-				lblText.Parent = lblBg
-				lblText.ZIndex = 8
+				local lbl = Instance.new("TextLabel")
+				lbl.Size = UDim2.new(1, 0, 0, 24)
+				lbl.BackgroundTransparency = 1
+				lbl.Text = tostring(text or "")
+				lbl.Font = Enum.Font.Gotham
+				lbl.TextSize = 16
+				lbl.TextColor3 = Color3.fromRGB(235, 235, 235) -- white
+				lbl.TextXAlignment = Enum.TextXAlignment.Left
+				lbl.LayoutOrder = #itemsFrame:GetChildren() + 1
+				lbl.Parent = itemsFrame
 
 				-- return a small API for the label
 				local labelObj = {}
-				labelObj.Frame = lblHolder
-				labelObj.Background = lblBg
-				labelObj.Label = lblText
+				labelObj.Frame = lbl
+				labelObj.Label = lbl
 
 				function labelObj:SetText(newText)
-					lblText.Text = tostring(newText or "")
+					lbl.Text = tostring(newText or "")
 				end
 
 				return labelObj
@@ -704,3 +658,170 @@ function KazeUI:CreateWindow(config)
 end
 
 return KazeUI
+
+--[[ Button CSS reference (user supplied, from Uiverse.io by Navarog21)
+/* From Uiverse.io by Navarog21 */ 
+button {
+  position: relative;
+  width: 11em;
+  height: 4em;
+  outline: none;
+  transition: 0.1s;
+  background-color: transparent;
+  border: none;
+  font-size: 13px;
+  font-weight: bold;
+  color: #ddebf0;
+}
+
+#clip {
+  --color: #2761c3;
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  border: 5px double var(--color);
+  box-shadow: inset 0px 0px 15px #195480;
+  -webkit-clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%);
+}
+
+.arrow {
+  position: absolute;
+  transition: 0.2s;
+  background-color: #2761c3;
+  top: 35%;
+  width: 11%;
+  height: 30%;
+}
+
+#leftArrow {
+  left: -13.5%;
+  -webkit-clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+
+#rightArrow {
+  -webkit-clip-path: polygon(100% 49%, 0 0, 0 100%);
+  left: 102%;
+}
+
+button:hover #rightArrow {
+  background-color: #27c39f;
+  left: -15%;
+  animation: 0.6s ease-in-out both infinite alternate rightArrow8;
+}
+
+button:hover #leftArrow {
+  background-color: #27c39f;
+  left: 103%;
+  animation: 0.6s ease-in-out both infinite alternate leftArrow8;
+}
+
+.corner {
+  position: absolute;
+  width: 4em;
+  height: 4em;
+  background-color: #2761c3;
+  box-shadow: inset 1px 1px 8px #2781c3;
+  transform: scale(1) rotate(45deg);
+  transition: 0.2s;
+}
+
+#rightTop {
+  top: -1.98em;
+  left: 91%;
+}
+
+#leftTop {
+  top: -1.96em;
+  left: -3.0em;
+}
+
+#leftBottom {
+  top: 2.10em;
+  left: -2.15em;
+}
+
+#rightBottom {
+  top: 45%;
+  left: 88%;
+}
+
+button:hover #leftTop {
+  animation: 0.1s ease-in-out 0.05s both changeColor8,
+  0.2s linear 0.4s both lightEffect8;
+}
+
+button:hover #rightTop {
+  animation: 0.1s ease-in-out 0.15s both changeColor8,
+  0.2s linear 0.4s both lightEffect8;
+}
+
+button:hover #rightBottom {
+  animation: 0.1s ease-in-out 0.25s both changeColor8,
+  0.2s linear 0.4s both lightEffect8;
+}
+
+button:hover #leftBottom {
+  animation: 0.1s ease-in-out 0.35s both changeColor8,
+  0.2s linear 0.4s both lightEffect8;
+}
+
+button:hover .corner {
+  transform: scale(1.25) rotate(45deg);
+}
+
+button:hover #clip {
+  animation: 0.2s ease-in-out 0.55s both greenLight8;
+  --color: #27c39f;
+}
+
+@keyframes changeColor8 {
+  from {
+    background-color: #2781c3;
+  }
+
+  to {
+    background-color: #27c39f;
+  }
+}
+
+@keyframes lightEffect8 {
+  from {
+    box-shadow: 1px 1px 5px #27c39f;
+  }
+
+  to {
+    box-shadow: 0 0 2px #27c39f;
+  }
+}
+
+@keyframes greenLight8 {
+  from {
+  }
+
+  to {
+    box-shadow: inset 0px 0px 32px #27c39f;
+  }
+}
+
+@keyframes leftArrow8 {
+  from {
+    transform: translate(0px);
+  }
+
+  to {
+    transform: translateX(10px);
+  }
+}
+
+@keyframes rightArrow8 {
+  from {
+    transform: translate(0px);
+  }
+
+  to {
+    transform: translateX(-10px);
+  }
+}
+]]
