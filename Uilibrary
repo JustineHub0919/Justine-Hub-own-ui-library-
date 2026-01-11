@@ -45,7 +45,12 @@ local function FormatImage(id)
 end
 
 --// Drag Function (works with Mouse and Touch)
+local DraggableCache = setmetatable({}, {__mode = "k"})
 local function MakeDraggable(dragPart, targetPart)
+	-- prevent double-binding / duplicate connections for same dragPart
+	if DraggableCache[dragPart] then return end
+	DraggableCache[dragPart] = true
+
 	local dragging = false
 	local dragInput, dragStart, startPos
 
@@ -355,7 +360,578 @@ function KazeUI:CreateWindow(config)
 	end
 
 	-- Return main UI handles (including the standalone MiniButton)
-	return {Window = Window, Content = Content, Icon = Icon, MiniButton = MiniButton}
+	-- NOTE: extended API with tab/element creation will be appended and returned below
+	-- initial return values preserved
+	-- return {Window = Window, Content = Content, Icon = Icon, MiniButton = MiniButton}
+
+	-- ========================================================================
+	-- Add: Tab System + Element Creators
+	-- ========================================================================
+
+	-- Tabs Panel (left) and Pages Holder (right) inside Content
+	local TabsPanel = Instance.new("Frame")
+	TabsPanel.Name = "TabsPanel"
+	TabsPanel.Size = UDim2.new(0, 180, 1, 0)
+	TabsPanel.Position = UDim2.new(0, 0, 0, 0)
+	TabsPanel.BackgroundTransparency = 1
+	TabsPanel.Parent = Content
+
+	local TabsList = Instance.new("ScrollingFrame")
+	TabsList.Name = "TabsList"
+	TabsList.Size = UDim2.new(1, 0, 1, 0)
+	TabsList.CanvasSize = UDim2.new(0, 0, 0, 0)
+	TabsList.ScrollBarThickness = 6
+	TabsList.BackgroundTransparency = 1
+	TabsList.VerticalScrollBarInset = Enum.ScrollBarInset.Always
+	TabsList.Parent = TabsPanel
+
+	local tabsLayout = Instance.new("UIListLayout")
+	tabsLayout.Parent = TabsList
+	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	tabsLayout.Padding = UDim.new(0, 8)
+
+	local tabsPadding = Instance.new("UIPadding")
+	tabsPadding.Parent = TabsList
+	tabsPadding.PaddingTop = UDim.new(0, 8)
+	tabsPadding.PaddingLeft = UDim.new(0, 8)
+	tabsPadding.PaddingRight = UDim.new(0, 8)
+	tabsPadding.PaddingBottom = UDim.new(0, 8)
+
+	-- Pages holder
+	local PagesHolder = Instance.new("Frame")
+	PagesHolder.Name = "PagesHolder"
+	PagesHolder.Size = UDim2.new(1, -180, 1, 0)
+	PagesHolder.Position = UDim2.new(0, 180, 0, 0)
+	PagesHolder.BackgroundTransparency = 1
+	PagesHolder.Parent = Content
+
+	-- Helper to update tabs list canvas size
+	local function updateTabsCanvas()
+		local abs = tabsLayout.AbsoluteContentSize
+		TabsList.CanvasSize = UDim2.new(0, 0, 0, abs.Y + 16)
+	end
+	tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabsCanvas)
+
+	-- function: create a tab and return helpers to create elements inside it
+	local function CreateTab(tabName, tabIcon)
+		tabIcon = FormatImage(tabIcon or "")
+		local TabButton = Instance.new("TextButton")
+		TabButton.Name = "Tab_" .. tabName
+		TabButton.Size = UDim2.new(1, 0, 0, 42)
+		TabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+		TabButton.BorderSizePixel = 0
+		TabButton.Text = tabName
+		TabButton.TextColor3 = Color3.fromRGB(220, 220, 220)
+		TabButton.Font = Enum.Font.GothamBold
+		TabButton.TextSize = 14
+		TabButton.TextXAlignment = Enum.TextXAlignment.Left
+		TabButton.Parent = TabsList
+		Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 8)
+
+		local iconLabel
+		if tabIcon ~= "" then
+			iconLabel = Instance.new("ImageLabel")
+			iconLabel.Image = tabIcon
+			iconLabel.BackgroundTransparency = 1
+			iconLabel.Size = UDim2.fromOffset(28, 28)
+			iconLabel.Position = UDim2.fromOffset(8, 7)
+			iconLabel.Parent = TabButton
+			Instance.new("UICorner", iconLabel).CornerRadius = UDim.new(1, 0)
+			-- shift text to the right
+			TabButton.Padding = TabButton.Padding or Instance.new("UIPadding", TabButton)
+			TabButton.Padding.PaddingLeft = UDim.new(0, 42)
+			TabButton.TextXAlignment = Enum.TextXAlignment.Left
+		else
+			-- small padding to left
+			TabButton.Padding = TabButton.Padding or Instance.new("UIPadding", TabButton)
+			TabButton.Padding.PaddingLeft = UDim.new(0, 12)
+		end
+
+		-- Page frame for content
+		local Page = Instance.new("Frame")
+		Page.Name = "Page_" .. tabName
+		Page.Size = UDim2.new(1, 0, 1, 0)
+		Page.Position = UDim2.new(0, 0, 0, 0)
+		Page.BackgroundTransparency = 1
+		Page.Visible = false
+		Page.Parent = PagesHolder
+
+		-- Scrollable content inside page
+		local ContentScroll = Instance.new("ScrollingFrame")
+		ContentScroll.Size = UDim2.new(1, 0, 1, 0)
+		ContentScroll.Position = UDim2.new(0, 0, 0, 0)
+		ContentScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+		ContentScroll.ScrollBarThickness = 10
+		ContentScroll.BackgroundTransparency = 1
+		ContentScroll.Parent = Page
+
+		local contentLayout = Instance.new("UIListLayout")
+		contentLayout.Parent = ContentScroll
+		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		contentLayout.Padding = UDim.new(0, 8)
+
+		local contentPadding = Instance.new("UIPadding")
+		contentPadding.Parent = ContentScroll
+		contentPadding.PaddingTop = UDim.new(0, 12)
+		contentPadding.PaddingLeft = UDim.new(0, 12)
+		contentPadding.PaddingRight = UDim.new(0, 12)
+		contentPadding.PaddingBottom = UDim.new(0, 12)
+
+		local function updateContentCanvas()
+			local abs = contentLayout.AbsoluteContentSize
+			ContentScroll.CanvasSize = UDim2.new(0, 0, 0, abs.Y + 16)
+		end
+		contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateContentCanvas)
+
+		-- Activate tab on click
+		TabButton.MouseButton1Click:Connect(function()
+			-- hide other pages and un-highlight other tabs
+			for _, child in ipairs(TabsList:GetChildren()) do
+				if child:IsA("TextButton") then
+					child.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+				end
+			end
+			for _, p in ipairs(PagesHolder:GetChildren()) do
+				if p:IsA("Frame") then
+					p.Visible = false
+				end
+			end
+			TabButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+			Page.Visible = true
+		end)
+
+		-- Default: if first tab created, activate it
+		if #PagesHolder:GetChildren() == 0 then
+			TabButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+			Page.Visible = true
+		end
+
+		-- ============================
+		-- Element Creator Functions
+		-- ============================
+		local tabAPI = {}
+
+		function tabAPI:AddLabel(text)
+			local frame = Instance.new("Frame")
+			frame.Size = UDim2.new(1, 0, 0, 24)
+			frame.BackgroundTransparency = 1
+			frame.Parent = ContentScroll
+
+			local lbl = Instance.new("TextLabel")
+			lbl.Size = UDim2.new(1, 0, 1, 0)
+			lbl.BackgroundTransparency = 1
+			lbl.Text = text or ""
+			lbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+			lbl.Font = Enum.Font.Gotham
+			lbl.TextSize = 14
+			lbl.TextXAlignment = Enum.TextXAlignment.Left
+			lbl.Parent = frame
+
+			return lbl
+		end
+
+		function tabAPI:AddButton(text, callback)
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 0, 36)
+			btn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+			btn.Text = text or "Button"
+			btn.TextColor3 = Color3.fromRGB(230, 230, 230)
+			btn.Font = Enum.Font.GothamBold
+			btn.TextSize = 14
+			btn.Parent = ContentScroll
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+			btn.MouseButton1Click:Connect(function()
+				if type(callback) == "function" then
+					pcall(callback)
+				end
+			end)
+			return btn
+		end
+
+		function tabAPI:AddToggle(text, default, callback)
+			local container = Instance.new("Frame")
+			container.Size = UDim2.new(1, 0, 0, 36)
+			container.BackgroundTransparency = 1
+			container.Parent = ContentScroll
+
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, -46, 1, 0)
+			label.Position = UDim2.fromOffset(6, 0)
+			label.BackgroundTransparency = 1
+			label.Text = text or "Toggle"
+			label.TextColor3 = Color3.fromRGB(220, 220, 220)
+			label.Font = Enum.Font.Gotham
+			label.TextSize = 14
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Parent = container
+
+			local toggle = Instance.new("TextButton")
+			toggle.Size = UDim2.new(0, 36, 0, 24)
+			toggle.Position = UDim2.new(1, -42, 0.5, -12)
+			toggle.BackgroundColor3 = default and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(45, 45, 50)
+			toggle.Parent = container
+			toggle.Text = ""
+			Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 6)
+
+			local state = default and true or false
+			toggle.MouseButton1Click:Connect(function()
+				state = not state
+				toggle.BackgroundColor3 = state and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(45, 45, 50)
+				if type(callback) == "function" then
+					pcall(callback, state)
+				end
+			end)
+			return {
+				Frame = container,
+				Set = function(v)
+					state = not not v
+					toggle.BackgroundColor3 = state and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(45, 45, 50)
+				end,
+				Get = function()
+					return state
+				end
+			}
+		end
+
+		function tabAPI:AddTextbox(placeholder, callback)
+			local box = Instance.new("TextBox")
+			box.Size = UDim2.new(1, 0, 0, 34)
+			box.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+			box.ClearTextOnFocus = false
+			box.PlaceholderText = placeholder or ""
+			box.Text = ""
+			box.TextColor3 = Color3.fromRGB(230, 230, 230)
+			box.Font = Enum.Font.Gotham
+			box.TextSize = 14
+			box.Parent = ContentScroll
+			Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+			box.FocusLost:Connect(function(enter)
+				if enter and type(callback) == "function" then
+					pcall(callback, box.Text)
+				end
+			end)
+			return box
+		end
+
+		function tabAPI:AddSlider(text, min, max, default, callback)
+			min = min or 0
+			max = max or 100
+			default = default or min
+			local container = Instance.new("Frame")
+			container.Size = UDim2.new(1, 0, 0, 48)
+			container.BackgroundTransparency = 1
+			container.Parent = ContentScroll
+
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, -64, 0, 18)
+			label.Position = UDim2.fromOffset(6, 4)
+			label.BackgroundTransparency = 1
+			label.Text = (text or "Slider") .. " - " .. tostring(default)
+			label.TextColor3 = Color3.fromRGB(220, 220, 220)
+			label.Font = Enum.Font.Gotham
+			label.TextSize = 14
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Parent = container
+
+			local barBG = Instance.new("Frame")
+			barBG.Size = UDim2.new(1, -12, 0, 12)
+			barBG.Position = UDim2.fromOffset(6, 26)
+			barBG.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+			barBG.Parent = container
+			Instance.new("UICorner", barBG).CornerRadius = UDim.new(0, 6)
+
+			local fill = Instance.new("Frame")
+			fill.Size = UDim2.new( (default - min) / math.max(1, max - min), 0, 1, 0)
+			fill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+			fill.Parent = barBG
+			Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 6)
+
+			local dragging = false
+			local function updateValueFromInput(input)
+				local abs = barBG.AbsoluteSize.X
+				local relative = math.clamp((input.Position.X - barBG.AbsolutePosition.X) / math.max(1, abs), 0, 1)
+				local value = min + (max - min) * relative
+				local rounded = math.floor(value * 100) / 100
+				fill.Size = UDim2.new(relative, 0, 1, 0)
+				label.Text = (text or "Slider") .. " - " .. tostring(rounded)
+				if type(callback) == "function" then
+					pcall(callback, rounded)
+				end
+			end
+
+			barBG.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					dragging = true
+					updateValueFromInput(input)
+				end
+			end)
+			barBG.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					dragging = false
+				end
+			end)
+			UIS.InputChanged:Connect(function(input)
+				if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+					updateValueFromInput(input)
+				end
+			end)
+
+			return {
+				Frame = container,
+				Set = function(v)
+					local relative = math.clamp((v - min) / math.max(1, max - min), 0, 1)
+					fill.Size = UDim2.new(relative, 0, 1, 0)
+					label.Text = (text or "Slider") .. " - " .. tostring(v)
+				end
+			}
+		end
+
+		function tabAPI:AddDropdown(text, options, callback)
+			options = options or {}
+			local container = Instance.new("Frame")
+			container.Size = UDim2.new(1, 0, 0, 36)
+			container.BackgroundTransparency = 1
+			container.Parent = ContentScroll
+
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 1, 0)
+			btn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+			btn.Text = text or "Select"
+			btn.TextColor3 = Color3.fromRGB(220, 220, 220)
+			btn.Font = Enum.Font.Gotham
+			btn.TextSize = 14
+			btn.Parent = container
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+			local list = Instance.new("Frame")
+			list.Size = UDim2.new(1, 0, 0, 0)
+			list.Position = UDim2.new(0, 0, 1, 8)
+			list.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+			list.ClipsDescendants = true
+			list.Parent = container
+			Instance.new("UICorner", list).CornerRadius = UDim.new(0, 6)
+
+			local listScroll = Instance.new("ScrollingFrame")
+			listScroll.Size = UDim2.new(1, 0, 1, 0)
+			listScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+			listScroll.BackgroundTransparency = 1
+			listScroll.ScrollBarThickness = 6
+			listScroll.Parent = list
+
+			local listLayout = Instance.new("UIListLayout")
+			listLayout.Parent = listScroll
+			listLayout.Padding = UDim.new(0, 4)
+
+			local function updateListSize()
+				local abs = listLayout.AbsoluteContentSize
+				list.Size = UDim2.new(1, 0, 0, math.clamp(abs.Y + 12, 0, 200))
+				listScroll.CanvasSize = UDim2.new(0, 0, 0, abs.Y)
+			end
+			listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateListSize)
+
+			local open = false
+			btn.MouseButton1Click:Connect(function()
+				open = not open
+				if open then
+					list.Visible = true
+				else
+					list.Visible = false
+				end
+			end)
+
+			for _, opt in ipairs(options) do
+				local opBtn = Instance.new("TextButton")
+				opBtn.Size = UDim2.new(1, -12, 0, 28)
+				opBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+				opBtn.Text = tostring(opt)
+				opBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+				opBtn.Font = Enum.Font.Gotham
+				opBtn.TextSize = 14
+				opBtn.Parent = listScroll
+				Instance.new("UICorner", opBtn).CornerRadius = UDim.new(0, 6)
+				opBtn.MouseButton1Click:Connect(function()
+					btn.Text = tostring(opt)
+					open = false
+					list.Visible = false
+					if type(callback) == "function" then
+						pcall(callback, opt)
+					end
+				end)
+			end
+
+			return {
+				Frame = container,
+				SetOptions = function(newOptions)
+					for _, c in ipairs(listScroll:GetChildren()) do
+						if c:IsA("TextButton") then c:Destroy() end
+					end
+					for _, opt in ipairs(newOptions) do
+						local opBtn = Instance.new("TextButton")
+						opBtn.Size = UDim2.new(1, -12, 0, 28)
+						opBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+						opBtn.Text = tostring(opt)
+						opBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+						opBtn.Font = Enum.Font.Gotham
+						opBtn.TextSize = 14
+						opBtn.Parent = listScroll
+						Instance.new("UICorner", opBtn).CornerRadius = UDim.new(0, 6)
+						opBtn.MouseButton1Click:Connect(function()
+							btn.Text = tostring(opt)
+							list.Visible = false
+							if type(callback) == "function" then
+								pcall(callback, opt)
+							end
+						end)
+					end
+					updateListSize()
+				end
+			}
+		end
+
+		function tabAPI:AddSeparator()
+			local sep = Instance.new("Frame")
+			sep.Size = UDim2.new(1, 0, 0, 10)
+			sep.BackgroundTransparency = 1
+			sep.Parent = ContentScroll
+			local line = Instance.new("Frame")
+			line.Size = UDim2.new(1, 0, 0, 1)
+			line.Position = UDim2.fromOffset(0, 6)
+			line.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+			line.Parent = sep
+			return sep
+		end
+
+		function tabAPI:AddProgressBar(text, value)
+			local container = Instance.new("Frame")
+			container.Size = UDim2.new(1, 0, 0, 36)
+			container.BackgroundTransparency = 1
+			container.Parent = ContentScroll
+
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, -6, 0, 16)
+			label.Position = UDim2.fromOffset(6, 0)
+			label.BackgroundTransparency = 1
+			label.Text = text or ""
+			label.TextColor3 = Color3.fromRGB(220, 220, 220)
+			label.Font = Enum.Font.Gotham
+			label.TextSize = 14
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Parent = container
+
+			local barBG = Instance.new("Frame")
+			barBG.Size = UDim2.new(1, -12, 0, 12)
+			barBG.Position = UDim2.fromOffset(6, 18)
+			barBG.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+			barBG.Parent = container
+			Instance.new("UICorner", barBG).CornerRadius = UDim.new(0, 6)
+
+			local fill = Instance.new("Frame")
+			fill.Size = UDim2.new(math.clamp(value or 0, 0, 1), 0, 1, 0)
+			fill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+			fill.Parent = barBG
+			Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 6)
+
+			return {
+				Set = function(v)
+					fill.Size = UDim2.new(math.clamp(v, 0, 1), 0, 1, 0)
+				end
+			}
+		end
+
+		function tabAPI:AddImage(imageId, size)
+			local img = Instance.new("ImageLabel")
+			img.Size = size or UDim2.new(1, 0, 0, 120)
+			img.BackgroundTransparency = 1
+			img.Image = FormatImage(imageId or "")
+			img.Parent = ContentScroll
+			return img
+		end
+
+		function tabAPI:AddKeybind(text, defaultKey, callback)
+			local container = Instance.new("Frame")
+			container.Size = UDim2.new(1, 0, 0, 36)
+			container.BackgroundTransparency = 1
+			container.Parent = ContentScroll
+
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, -120, 1, 0)
+			label.Position = UDim2.fromOffset(6, 0)
+			label.BackgroundTransparency = 1
+			label.Text = text or "Keybind"
+			label.TextColor3 = Color3.fromRGB(220, 220, 220)
+			label.Font = Enum.Font.Gotham
+			label.TextSize = 14
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Parent = container
+
+			local bindBtn = Instance.new("TextButton")
+			bindBtn.Size = UDim2.new(0, 100, 0, 28)
+			bindBtn.Position = UDim2.new(1, -110, 0.5, -14)
+			bindBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+			bindBtn.Text = tostring(defaultKey or "...")
+			bindBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+			bindBtn.Font = Enum.Font.Gotham
+			bindBtn.TextSize = 14
+			bindBtn.Parent = container
+			Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 6)
+
+			local current = defaultKey
+			local awaiting = false
+			local conn
+
+			bindBtn.MouseButton1Click:Connect(function()
+				awaiting = true
+				bindBtn.Text = "Press..."
+				if conn then conn:Disconnect() end
+				conn = UIS.InputBegan:Connect(function(input, gameProcessed)
+					if gameProcessed then return end
+					if input.UserInputType == Enum.UserInputType.Keyboard then
+						current = input.KeyCode
+						bindBtn.Text = tostring(current):gsub("Enum.KeyCode.", "")
+						awaiting = false
+						if type(callback) == "function" then
+							pcall(callback, current)
+						end
+						if conn then conn:Disconnect() end
+					end
+				end)
+			end)
+
+			return {
+				Get = function() return current end,
+				Set = function(k) current = k bindBtn.Text = tostring(k) end
+			}
+		end
+
+		-- expose the page and content scroll for advanced usage
+		tabAPI.Page = Page
+		tabAPI.ContentScroll = ContentScroll
+
+		return tabAPI
+	end
+
+	-- Convenience: Create multiple tabs from a table
+	local function CreateTabs(tabs)
+		local results = {}
+		for _, t in ipairs(tabs or {}) do
+			results[#results + 1] = CreateTab(t.Name or "Tab", t.Icon)
+		end
+		return results
+	end
+
+	-- Build API to return
+	local API = {
+		Window = Window,
+		Content = Content,
+		Icon = Icon,
+		MiniButton = MiniButton,
+		CreateTab = CreateTab,
+		CreateTabs = CreateTabs,
+		TabsPanel = TabsPanel,
+		PagesHolder = PagesHolder
+	}
+
+	return API
 end
 
 return KazeUI
