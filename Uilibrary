@@ -1,4 +1,12 @@
--- Kaze UI Base (left tabs API, stable dragging, scrolling tabs, locked tabs support)
+-- Kaze UI (updated)
+-- Fixes:
+--  - Restored TopBar + MiniButton dragging for PC & Mobile (pointer-offset, Active=true)
+--  - Tab title correctly uses provided Title (supports both table and positional args)
+--  - Description shown via tooltip: hover (PC) or long-press (mobile)
+--  - Locked tabs show a lock icon and cannot be opened (click/tap disabled)
+--  - Tabs use ScrollingFrame so many tabs show & scroll
+--  - Safe coercion of Title/Desc to string to avoid "string expected, got table" errors
+
 local Kaze_UI = {}
 Kaze_UI.__index = Kaze_UI
 
@@ -18,7 +26,6 @@ ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 -- UIScale
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
-
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
 	if size.X < 600 then
@@ -30,7 +37,7 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Texture sanitizer
+-- Format Image (digits only)
 local function FormatImage(id)
 	if not id then return "" end
 	id = tostring(id)
@@ -39,10 +46,29 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Dragging: pointer-offset + clamp on release (works with AnchorPoint)
+-- Neon stroke animation helper
+local function AnimateStrokeColor(stroke)
+	spawn(function()
+		while stroke and stroke.Parent do
+			local ok, tween = pcall(function()
+				return TweenService:Create(stroke, TweenInfo.new(1.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
+			end)
+			if ok and tween then tween:Play() end
+			break
+		end
+	end)
+end
+
+-- Dragging: pointer-offset + clamp on release; supports Touch and Mouse.
 local function MakeDraggable(dragPart, targetPart)
+	if not dragPart or not targetPart then return end
+	-- ensure the dragPart can receive input (Frame vs Button)
+	pcall(function() dragPart.Active = true end)
+	pcall(function() targetPart.Active = true end)
+
 	local dragging = false
-	local dragInput, pointerOffset
+	local dragInput = nil
+	local pointerOffset = nil
 
 	local function clampAbsolutePosition(absPos, absSize)
 		local ok, vp = pcall(function() return workspace.CurrentCamera.ViewportSize end)
@@ -63,7 +89,7 @@ local function MakeDraggable(dragPart, targetPart)
 		gui.Position = UDim2.new(0, math.floor(newX + 0.5), 0, math.floor(newY + 0.5))
 	end
 
-	local function update(input)
+	local function onUpdate(input)
 		if not dragging or not pointerOffset then return end
 		if not input or not input.Position then return end
 		local newAbs = input.Position - pointerOffset
@@ -73,9 +99,11 @@ local function MakeDraggable(dragPart, targetPart)
 
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			-- ignore if target hidden
 			if not targetPart.Visible then return end
 			dragging = true
 			dragInput = input
+			-- compute pointer offset relative to top-left of target
 			local startAbs = targetPart.AbsolutePosition
 			pointerOffset = input.Position - startAbs
 
@@ -101,25 +129,12 @@ local function MakeDraggable(dragPart, targetPart)
 
 	UIS.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then
-			update(input)
+			onUpdate(input)
 		end
 	end)
 end
 
--- Neon stroke animation helper
-local function AnimateStrokeColor(stroke)
-	spawn(function()
-		while stroke and stroke.Parent do
-			local ok, tween = pcall(function()
-				return TweenService:Create(stroke, TweenInfo.new(1.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
-			end)
-			if ok and tween then tween:Play() end
-			break
-		end
-	end)
-end
-
--- CreateWindow API
+-- CreateWindow
 function Kaze_UI:CreateWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -160,16 +175,17 @@ function Kaze_UI:CreateWindow(config)
 	UpdateWindowSize()
 	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateWindowSize)
 
-	-- TopBar
+	-- Top Bar
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 56)
 	TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = Window
+	TopBar.Active = true -- ensure it receives touch input
 	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
 
-	-- Icon & title
+	-- Icon + Title
 	local Icon = Instance.new("ImageLabel")
 	Icon.Size = UDim2.fromOffset(32, 32)
 	Icon.Position = UDim2.fromOffset(14, 12)
@@ -200,6 +216,7 @@ function Kaze_UI:CreateWindow(config)
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
 
+	-- Minimize & Close
 	local Minimize = Instance.new("TextButton")
 	Minimize.Size = UDim2.fromOffset(36, 36)
 	Minimize.Position = UDim2.new(1, -88, 0.5, -18)
@@ -222,6 +239,7 @@ function Kaze_UI:CreateWindow(config)
 	Close.Parent = TopBar
 	Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
 
+	-- Make TopBar draggable (PC & mobile)
 	MakeDraggable(TopBar, Window)
 
 	local Content = Instance.new("Frame")
@@ -230,7 +248,7 @@ function Kaze_UI:CreateWindow(config)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
 
-	-- Left tab panel
+	-- Left Tabs Panel
 	local TabsPanel = Instance.new("Frame")
 	TabsPanel.Name = "TabsPanel"
 	TabsPanel.Size = UDim2.new(0, 180, 1, -56)
@@ -247,6 +265,7 @@ function Kaze_UI:CreateWindow(config)
 	TabsStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	AnimateStrokeColor(TabsStroke)
 
+	-- Scrolling list for tabs
 	local TabsList = Instance.new("ScrollingFrame")
 	TabsList.Size = UDim2.new(1, -16, 1, -16)
 	TabsList.Position = UDim2.fromOffset(8, 8)
@@ -268,6 +287,7 @@ function Kaze_UI:CreateWindow(config)
 	TabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
 	updateCanvas()
 
+	-- Divider (glowing)
 	local Divider = Instance.new("Frame")
 	Divider.Name = "Divider"
 	Divider.Size = UDim2.new(0, 4, 1, -72)
@@ -281,6 +301,7 @@ function Kaze_UI:CreateWindow(config)
 	DividerStroke.Thickness = 1.6
 	AnimateStrokeColor(DividerStroke)
 
+	-- Right content area
 	local RightContent = Instance.new("Frame")
 	RightContent.Name = "RightContent"
 	RightContent.Size = UDim2.new(1, -180 - 24, 1, -56 - 16)
@@ -288,173 +309,7 @@ function Kaze_UI:CreateWindow(config)
 	RightContent.BackgroundTransparency = 1
 	RightContent.Parent = Window
 
-	local tabs = {}
-	local selectedTab = nil
-
-	-- AddTab accepts a table {Title = ..., Desc = ..., Locked = true/false, Icon = id}
-	local function AddTab(def)
-		def = def or {}
-		local rawTitle = def.Title
-		local rawDesc = def.Desc
-		local locked = def.Locked == true
-		local icon = def.Icon and FormatImage(def.Icon) or nil
-
-		local titleText = rawTitle == nil and "New Tab" or tostring(rawTitle)
-		local descText = rawDesc == nil and "" or tostring(rawDesc)
-
-		local tabFrame = Instance.new("Frame")
-		tabFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
-		tabFrame.Size = UDim2.new(1, 0, 0, 56)
-		tabFrame.LayoutOrder = #tabs + 1
-		tabFrame.BorderSizePixel = 0
-		tabFrame.Parent = TabsList
-		Instance.new("UICorner", tabFrame).CornerRadius = UDim.new(0, 10)
-
-		local tabStroke = Instance.new("UIStroke")
-		tabStroke.Parent = tabFrame
-		tabStroke.Color = Color3.fromRGB(0, 160, 255)
-		tabStroke.Thickness = 1.6
-		tabStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		AnimateStrokeColor(tabStroke)
-
-		local iconLabel = Instance.new("ImageLabel")
-		iconLabel.Size = UDim2.fromOffset(34, 34)
-		iconLabel.Position = UDim2.fromOffset(10, 11)
-		iconLabel.BackgroundTransparency = 1
-		iconLabel.Image = icon or ""
-		iconLabel.Parent = tabFrame
-		Instance.new("UICorner", iconLabel).CornerRadius = UDim.new(1, 0)
-
-		local titleLabel = Instance.new("TextLabel")
-		titleLabel.Size = UDim2.new(1, -70, 0, 24)
-		titleLabel.Position = UDim2.fromOffset(54, 6)
-		titleLabel.BackgroundTransparency = 1
-		titleLabel.Text = titleText
-		titleLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
-		titleLabel.Font = Enum.Font.GothamBold
-		titleLabel.TextSize = 14
-		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		titleLabel.TextWrapped = false
-		titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
-		titleLabel.Parent = tabFrame
-
-		local descLabel = Instance.new("TextLabel")
-		descLabel.Size = UDim2.new(1, -70, 0, 18)
-		descLabel.Position = UDim2.fromOffset(54, 28)
-		descLabel.BackgroundTransparency = 1
-		descLabel.Text = descText
-		descLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
-		descLabel.Font = Enum.Font.Gotham
-		descLabel.TextSize = 12
-		descLabel.TextXAlignment = Enum.TextXAlignment.Left
-		descLabel.TextWrapped = false
-		descLabel.TextTruncate = Enum.TextTruncate.AtEnd
-		descLabel.Parent = tabFrame
-
-		local selIndicator = Instance.new("Frame")
-		selIndicator.Size = UDim2.new(0, 6, 1, 0)
-		selIndicator.Position = UDim2.new(0, 0, 0, 0)
-		selIndicator.BackgroundColor3 = Color3.fromRGB(0, 220, 180)
-		selIndicator.Visible = false
-		selIndicator.Parent = tabFrame
-		Instance.new("UICorner", selIndicator).CornerRadius = UDim.new(0, 4)
-
-		local lockIcon = nil
-		if locked then
-			lockIcon = Instance.new("ImageLabel")
-			lockIcon.Size = UDim2.fromOffset(18, 18)
-			lockIcon.Position = UDim2.fromOffset(tabFrame.AbsoluteSize.X - 28, 19) -- adjust on resize below
-			lockIcon.AnchorPoint = Vector2.new(0, 0)
-			lockIcon.BackgroundTransparency = 1
-			-- small lock bullet (simple filled circle) you can replace with image if you want
-			lockIcon.Image = ""
-			lockIcon.BackgroundColor3 = Color3.fromRGB(120, 120, 130)
-			lockIcon.Parent = tabFrame
-			Instance.new("UICorner", lockIcon).CornerRadius = UDim.new(1, 0)
-		end
-
-		local tabContent = Instance.new("Frame")
-		tabContent.Size = UDim2.new(1, 0, 1, 0)
-		tabContent.BackgroundTransparency = 1
-		tabContent.Visible = false
-		tabContent.Parent = RightContent
-
-		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(1, 0, 1, 0)
-		btn.BackgroundTransparency = 1
-		btn.Text = ""
-		btn.Parent = tabFrame
-
-		local function select()
-			if locked then
-				-- optional feedback: pulse the tab stroke
-				local pulse = TweenService:Create(tabStroke, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Thickness = 3})
-				pulse:Play()
-				pulse.Completed:Connect(function() pcall(function() tabStroke.Thickness = 1.6 end) end)
-				return
-			end
-			if selectedTab and selectedTab.selIndicator then
-				selectedTab.selIndicator.Visible = false
-				selectedTab.tabFrame.BackgroundColor3 = Color3.fromRGB(20,20,24)
-				selectedTab.tabContent.Visible = false
-			end
-			selIndicator.Visible = true
-			tabFrame.BackgroundColor3 = Color3.fromRGB(28,28,32)
-			tabContent.Visible = true
-			selectedTab = {tabFrame = tabFrame, tabContent = tabContent, selIndicator = selIndicator, titleLabel = titleLabel}
-		end
-
-		btn.MouseButton1Click:Connect(select)
-
-		-- keep lock icon positioned correctly on AbsoluteSize changes
-		tabFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-			if lockIcon then
-				lockIcon.Position = UDim2.fromOffset(tabFrame.AbsoluteSize.X - 28, 19)
-			end
-		end)
-
-		local tabObj = {
-			tabFrame = tabFrame,
-			titleLabel = titleLabel,
-			descLabel = descLabel,
-			icon = iconLabel,
-			tabContent = tabContent,
-			select = select,
-			setTitle = function(newTitle)
-				if newTitle == nil then return end
-				titleLabel.Text = tostring(newTitle)
-			end,
-			setDesc = function(newDesc)
-				if newDesc == nil then return end
-				descLabel.Text = tostring(newDesc)
-			end,
-			setLocked = function(state)
-				locked = state == true
-				if locked and not lockIcon then
-					lockIcon = Instance.new("ImageLabel")
-					lockIcon.Size = UDim2.fromOffset(18, 18)
-					lockIcon.Position = UDim2.fromOffset(tabFrame.AbsoluteSize.X - 28, 19)
-					lockIcon.BackgroundTransparency = 1
-					lockIcon.Image = ""
-					lockIcon.BackgroundColor3 = Color3.fromRGB(120, 120, 130)
-					lockIcon.Parent = tabFrame
-					Instance.new("UICorner", lockIcon).CornerRadius = UDim.new(1, 0)
-				elseif not locked and lockIcon then
-					lockIcon:Destroy()
-					lockIcon = nil
-				end
-			end,
-			Locked = locked,
-			Content = tabContent
-		}
-
-		table.insert(tabs, tabObj)
-		if #tabs == 1 then tabObj.select() end
-		updateCanvas()
-		return tabObj
-	end
-
-	-- Mini button
+	-- Mini Button (60x60) - draggable
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize
@@ -466,22 +321,15 @@ function Kaze_UI:CreateWindow(config)
 	MiniButton.ZIndex = 999
 	MiniButton.ScaleType = Enum.ScaleType.Slice
 	MiniButton.SliceCenter = Rect.new(4,4,60,60)
+	MiniButton.Active = true
 
-	local miniUICorner = Instance.new("UICorner")
-	miniUICorner.CornerRadius = UDim.new(0, 12)
-	miniUICorner.Parent = MiniButton
-
-	local miniPadding = Instance.new("UIPadding")
-	miniPadding.PaddingTop = UDim.new(0, 4)
-	miniPadding.PaddingBottom = UDim.new(0, 4)
-	miniPadding.PaddingLeft = UDim.new(0, 4)
-	miniPadding.PaddingRight = UDim.new(0, 4)
-	miniPadding.Parent = MiniButton
+	local miniUICorner = Instance.new("UICorner"); miniUICorner.CornerRadius = UDim.new(0, 12); miniUICorner.Parent = MiniButton
+	local miniPadding = Instance.new("UIPadding"); miniPadding.PaddingTop = UDim.new(0,4); miniPadding.PaddingBottom = UDim.new(0,4); miniPadding.PaddingLeft = UDim.new(0,4); miniPadding.PaddingRight = UDim.new(0,4); miniPadding.Parent = MiniButton
 
 	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.Size = UDim2.fromScale(1, 1)
-	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
-	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	MiniIcon.Size = UDim2.fromScale(1,1)
+	MiniIcon.Position = UDim2.fromScale(0.5,0.5)
+	MiniIcon.AnchorPoint = Vector2.new(0.5,0.5)
 	MiniIcon.BackgroundTransparency = 1
 	MiniIcon.Image = OpenIcon
 	MiniIcon.Parent = MiniButton
@@ -527,27 +375,27 @@ function Kaze_UI:CreateWindow(config)
 		Minimize.Active = false
 		Close.Active = false
 		local Overlay = Instance.new("Frame")
-		Overlay.Size = UDim2.new(1, 0, 1, 0)
-		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		Overlay.Size = UDim2.new(1,0,1,0)
+		Overlay.BackgroundColor3 = Color3.fromRGB(0,0,0)
 		Overlay.BackgroundTransparency = 0.6
 		Overlay.ZIndex = 20
 		Overlay.Parent = Window
 
 		local ConfirmWindow = Instance.new("Frame")
-		ConfirmWindow.Size = UDim2.fromOffset(350, 150)
-		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
-		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.5)
-		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+		ConfirmWindow.Size = UDim2.fromOffset(350,150)
+		ConfirmWindow.AnchorPoint = Vector2.new(0.5,0.5)
+		ConfirmWindow.Position = UDim2.fromScale(0.5,0.5)
+		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
 		ConfirmWindow.ZIndex = 21
 		ConfirmWindow.Parent = Overlay
-		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 12)
+		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0,12)
 
 		local ConfirmText = Instance.new("TextLabel")
-		ConfirmText.Size = UDim2.new(1, -32, 0, 48)
-		ConfirmText.Position = UDim2.fromOffset(16, 20)
+		ConfirmText.Size = UDim2.new(1,-32,0,48)
+		ConfirmText.Position = UDim2.fromOffset(16,20)
 		ConfirmText.BackgroundTransparency = 1
 		ConfirmText.Text = "Are you sure you want to close the UI?"
-		ConfirmText.TextColor3 = Color3.fromRGB(230, 230, 230)
+		ConfirmText.TextColor3 = Color3.fromRGB(230,230,230)
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 18
 		ConfirmText.TextWrapped = true
@@ -555,9 +403,9 @@ function Kaze_UI:CreateWindow(config)
 		ConfirmText.Parent = ConfirmWindow
 
 		local ButtonsFrame = Instance.new("Frame")
-		ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
-		ButtonsFrame.Position = UDim2.new(0, 0, 1, -20)
-		ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
+		ButtonsFrame.Size = UDim2.new(1,0,0,40)
+		ButtonsFrame.Position = UDim2.new(0,0,1,-20)
+		ButtonsFrame.AnchorPoint = Vector2.new(0,1)
 		ButtonsFrame.BackgroundTransparency = 1
 		ButtonsFrame.ZIndex = 22
 		ButtonsFrame.Parent = ConfirmWindow
@@ -566,52 +414,325 @@ function Kaze_UI:CreateWindow(config)
 		layout.Parent = ButtonsFrame
 		layout.FillDirection = Enum.FillDirection.Horizontal
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.Padding = UDim.new(0, 16)
+		layout.Padding = UDim.new(0,16)
 
 		local ConfirmBtn = Instance.new("TextButton")
-		ConfirmBtn.Size = UDim2.new(0, 120, 0, 36)
-		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+		ConfirmBtn.Size = UDim2.new(0,120,0,36)
+		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
 		ConfirmBtn.Text = "Confirm"
-		ConfirmBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
+		ConfirmBtn.TextColor3 = Color3.fromRGB(230,230,230)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 16
 		ConfirmBtn.ZIndex = 23
 		ConfirmBtn.Parent = ButtonsFrame
-		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 8)
+		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0,8)
 
 		local CancelBtn = Instance.new("TextButton")
-		CancelBtn.Size = UDim2.new(0, 120, 0, 36)
-		CancelBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+		CancelBtn.Size = UDim2.new(0,120,0,36)
+		CancelBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
 		CancelBtn.Text = "Cancel"
-		CancelBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+		CancelBtn.TextColor3 = Color3.fromRGB(220,220,220)
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 16
 		CancelBtn.ZIndex = 23
 		CancelBtn.Parent = ButtonsFrame
-		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
+		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
 
-		ConfirmBtn.MouseButton1Click:Connect(function()
-			ScreenGui:Destroy()
-		end)
-		CancelBtn.MouseButton1Click:Connect(function()
-			Overlay:Destroy()
-			Minimize.Active = true
-			Close.Active = true
-		end)
+		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); Minimize.Active = true; Close.Active = true end)
 	end
 	Close.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	if typeof(Callback) == "function" then
-		pcall(Callback)
+	-- Tab system
+	local tabs = {}
+	local selectedTab = nil
+
+	-- Tooltip helper (shows description)
+	local function CreateTooltip()
+		local tip = Instance.new("Frame")
+		tip.Size = UDim2.new(0, 220, 0, 64)
+		tip.BackgroundColor3 = Color3.fromRGB(20,20,24)
+		tip.BorderSizePixel = 0
+		tip.ZIndex = 1001
+		Instance.new("UICorner", tip).CornerRadius = UDim.new(0,8)
+		local stroke = Instance.new("UIStroke", tip)
+		stroke.Color = Color3.fromRGB(0,160,255)
+		stroke.Thickness = 1.5
+		AnimateStrokeColor(stroke)
+
+		local txt = Instance.new("TextLabel")
+		txt.Size = UDim2.new(1, -16, 1, -16)
+		txt.Position = UDim2.fromOffset(8,8)
+		txt.BackgroundTransparency = 1
+		txt.TextColor3 = Color3.fromRGB(230,230,230)
+		txt.TextWrapped = true
+		txt.Font = Enum.Font.Gotham
+		txt.TextSize = 13
+		txt.TextXAlignment = Enum.TextXAlignment.Left
+		txt.TextYAlignment = Enum.TextYAlignment.Top
+		txt.Parent = tip
+
+		return tip, txt
 	end
 
-	-- return API
+	-- AddTab: supports both table def and positional signature
+	-- usage: AddTab{Title="T", Desc="D", Locked=true, Icon="id"}  OR  AddTab("T","D",true,"id")
+	local function AddTab(a, b, c, d)
+		local def
+		if type(a) == "table" and b == nil then
+			def = a
+		else
+			-- positional args
+			def = {
+				Title = a,
+				Desc = b,
+				Locked = c,
+				Icon = d
+			}
+		end
+
+		def = def or {}
+		local rawTitle = def.Title
+		local rawDesc = def.Desc
+		local locked = def.Locked == true
+		local icon = def.Icon and FormatImage(def.Icon) or nil
+
+		local titleText = rawTitle == nil and "New Tab" or tostring(rawTitle)
+		local descText = rawDesc == nil and "" or tostring(rawDesc)
+
+		-- Tab frame
+		local tabFrame = Instance.new("Frame")
+		tabFrame.BackgroundColor3 = Color3.fromRGB(20,20,24)
+		tabFrame.Size = UDim2.new(1, 0, 0, 56)
+		tabFrame.LayoutOrder = #tabs + 1
+		tabFrame.BorderSizePixel = 0
+		tabFrame.Parent = TabsList
+		Instance.new("UICorner", tabFrame).CornerRadius = UDim.new(0,10)
+		tabFrame.Active = true
+
+		local tabStroke = Instance.new("UIStroke")
+		tabStroke.Parent = tabFrame
+		tabStroke.Color = Color3.fromRGB(0,160,255)
+		tabStroke.Thickness = 1.6
+		tabStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		AnimateStrokeColor(tabStroke)
+
+		-- icon
+		local iconLabel = Instance.new("ImageLabel")
+		iconLabel.Size = UDim2.fromOffset(34,34)
+		iconLabel.Position = UDim2.fromOffset(10,11)
+		iconLabel.BackgroundTransparency = 1
+		iconLabel.Image = icon or ""
+		iconLabel.Parent = tabFrame
+		Instance.new("UICorner", iconLabel).CornerRadius = UDim.new(1,0)
+
+		-- title & desc labels
+		local titleLabel = Instance.new("TextLabel")
+		titleLabel.Size = UDim2.new(1, -70, 0, 24)
+		titleLabel.Position = UDim2.fromOffset(54, 6)
+		titleLabel.BackgroundTransparency = 1
+		titleLabel.Text = titleText
+		titleLabel.TextColor3 = Color3.fromRGB(230,230,230)
+		titleLabel.Font = Enum.Font.GothamBold
+		titleLabel.TextSize = 14
+		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		titleLabel.TextWrapped = false
+		titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+		titleLabel.Parent = tabFrame
+
+		local descLabel = Instance.new("TextLabel")
+		descLabel.Size = UDim2.new(1, -70, 0, 18)
+		descLabel.Position = UDim2.fromOffset(54, 28)
+		descLabel.BackgroundTransparency = 1
+		descLabel.Text = descText
+		descLabel.TextColor3 = Color3.fromRGB(160,160,160)
+		descLabel.Font = Enum.Font.Gotham
+		descLabel.TextSize = 12
+		descLabel.TextXAlignment = Enum.TextXAlignment.Left
+		descLabel.TextWrapped = false
+		descLabel.TextTruncate = Enum.TextTruncate.AtEnd
+		descLabel.Parent = tabFrame
+
+		-- selected indicator (left)
+		local selIndicator = Instance.new("Frame")
+		selIndicator.Size = UDim2.new(0, 6, 1, 0)
+		selIndicator.Position = UDim2.new(0, 0, 0, 0)
+		selIndicator.BackgroundColor3 = Color3.fromRGB(0,220,180)
+		selIndicator.Visible = false
+		selIndicator.Parent = tabFrame
+		Instance.new("UICorner", selIndicator).CornerRadius = UDim.new(0,4)
+
+		-- lock icon (TextLabel with emoji) - created if locked
+		local lockLabel = nil
+		local function ensureLockIcon()
+			if lockLabel then return end
+			lockLabel = Instance.new("TextLabel")
+			lockLabel.Size = UDim2.fromOffset(18,18)
+			lockLabel.AnchorPoint = Vector2.new(1, 0)
+			lockLabel.Position = UDim2.new(1, -10, 0, 19)
+			lockLabel.BackgroundTransparency = 1
+			lockLabel.Text = "🔒"
+			lockLabel.TextSize = 16
+			lockLabel.Font = Enum.Font.SourceSans
+			lockLabel.TextColor3 = Color3.fromRGB(200,200,200)
+			lockLabel.Parent = tabFrame
+		end
+		if locked then ensureLockIcon() end
+
+		-- tab content
+		local tabContent = Instance.new("Frame")
+		tabContent.Size = UDim2.new(1,0,1,0)
+		tabContent.BackgroundTransparency = 1
+		tabContent.Visible = false
+		tabContent.Parent = RightContent
+
+		-- transparent button to handle clicks/touches
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1,0,1,0)
+		btn.BackgroundTransparency = 1
+		btn.Text = ""
+		btn.Parent = tabFrame
+
+		-- selection logic: respects locked state and updates selectedTab
+		local function select()
+			-- read latest locked state from obj
+			if tabObj.Locked then
+				-- pulse visual feedback
+				local ok, pulse = pcall(function()
+					return TweenService:Create(tabStroke, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Thickness = 3})
+				end)
+				if ok and pulse then
+					pulse:Play()
+					pulse.Completed:Connect(function() pcall(function() tabStroke.Thickness = 1.6 end) end)
+				end
+				return
+			end
+			if selectedTab and selectedTab.selIndicator then
+				selectedTab.selIndicator.Visible = false
+				selectedTab.tabFrame.BackgroundColor3 = Color3.fromRGB(20,20,24)
+				selectedTab.tabContent.Visible = false
+			end
+			selIndicator.Visible = true
+			tabFrame.BackgroundColor3 = Color3.fromRGB(28,28,32)
+			tabContent.Visible = true
+			selectedTab = {tabFrame = tabFrame, tabContent = tabContent, selIndicator = selIndicator, titleLabel = titleLabel}
+		end
+
+		btn.MouseButton1Click:Connect(function()
+			select()
+		end)
+
+		-- Tooltip behavior: show description on hover (PC) or long-press (mobile)
+		local tooltip, tooltipText = CreateTooltip()
+		local tooltipTimer = nil
+		local showingTooltip = false
+
+		local function showTipAt(pos)
+			if showingTooltip then return end
+			showingTooltip = true
+			tooltipText.Text = descText or ""
+			tooltip.Parent = ScreenGui
+			-- position: try to place to the right of the tab
+			local x = math.clamp(pos.X + 8, 8, workspace.CurrentCamera.ViewportSize.X - tooltip.AbsoluteSize.X - 8)
+			local y = math.clamp(pos.Y - tooltip.AbsoluteSize.Y/2, 8, workspace.CurrentCamera.ViewportSize.Y - tooltip.AbsoluteSize.Y - 8)
+			tooltip.Position = UDim2.new(0, x, 0, y)
+		end
+
+		local function hideTip()
+			if showingTooltip and tooltip and tooltip.Parent then
+				tooltip:Destroy()
+			end
+			showingTooltip = false
+		end
+
+		-- mouse hover for PC
+		tabFrame.MouseEnter:Connect(function()
+			if UIS.TouchEnabled then return end
+			-- show immediately
+			local pos = tabFrame.AbsolutePosition + Vector2.new(tabFrame.AbsoluteSize.X, tabFrame.AbsoluteSize.Y/2)
+			showTipAt(pos)
+		end)
+		tabFrame.MouseLeave:Connect(function()
+			if UIS.TouchEnabled then return end
+			hideTip()
+		end)
+
+		-- touch long-press for mobile
+		tabFrame.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch then
+				-- start timer
+				tooltipTimer = task.spawn(function()
+					task.wait(0.5) -- long-press threshold
+					-- only show if touch still down
+					if input.UserInputState == Enum.UserInputState.Begin then
+						local pos = input.Position
+						showTipAt(pos)
+					end
+				end)
+			end
+		end)
+		tabFrame.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch then
+				-- cancel timer and hide
+				if tooltipTimer then
+					-- cannot cancel task.spawn easily; rely on input state check
+					tooltipTimer = nil
+				end
+				hideTip()
+			end
+		end)
+
+		-- keep lock icon positioned if window scales
+		tabFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			if lockLabel then
+				lockLabel.Position = UDim2.new(1, -10, 0, 19)
+			end
+		end)
+
+		-- Build tab object
+		local tabObj = {
+			tabFrame = tabFrame,
+			titleLabel = titleLabel,
+			descLabel = descLabel,
+			icon = iconLabel,
+			tabContent = tabContent,
+			select = select,
+			setTitle = function(newTitle)
+				if newTitle == nil then return end
+				titleLabel.Text = tostring(newTitle)
+			end,
+			setDesc = function(newDesc)
+				if newDesc == nil then return end
+				descLabel.Text = tostring(newDesc)
+			end,
+			setLocked = function(state)
+				tabObj.Locked = state == true
+				if tabObj.Locked then
+					ensureLockIcon()
+				else
+					if lockLabel then lockLabel:Destroy(); lockLabel = nil end
+				end
+			end,
+			Locked = locked,
+			Content = tabContent
+		}
+
+		table.insert(tabs, tabObj)
+		-- auto-select first tab if none selected
+		if #tabs == 1 then
+			tabObj.select()
+		end
+		updateCanvas()
+		return tabObj
+	end
+
+	-- Expose public API
 	local api = {
 		Window = Window,
 		Content = RightContent,
 		AddTab = AddTab,
 		LeftTabs = {
-			Add = AddTab, -- convenience
+			Add = AddTab,
 			_tabs = tabs,
 			Select = function(index)
 				if type(index) == "number" and tabs[index] and tabs[index].select then
@@ -625,6 +746,10 @@ function Kaze_UI:CreateWindow(config)
 			Divider = Divider
 		}
 	}
+
+	if typeof(Callback) == "function" then
+		pcall(Callback)
+	end
 
 	return api
 end
