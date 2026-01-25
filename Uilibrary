@@ -1,7 +1,6 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
---// Added: Strict Texture ID Sanitizer + 60x60 Minimize ImageButton (draggable, ZIndex 999)
---// Modified: glowing dividers, consistent UICorners on SideBar and confirm shadow
+--// Updated: shadow rounded corner fix; dividers matching outline (neon stroke thickness/color)
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -35,8 +34,6 @@ UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
 --// Texture ID Sanitizer
--- Accepts strings like "rbxassetid://123", "Rbxtextureid://123", "123", etc.
--- Extracts digits with string.gsub(id, "%D", "") and returns "rbxassetid://<digits>" or "" if none found.
 local function FormatImage(id)
 	if not id then return "" end
 	id = tostring(id)
@@ -109,9 +106,7 @@ function KazeUI:CreateWindow(config)
 
 	-- Open Button Config (ENFORCED to 60x60 for mobile playability)
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
-	-- Enforce exact 60x60 size (UDim2.fromOffset) as requested
 	local MiniButtonSize = UDim2.fromOffset(60, 60)
-
 	local Callback = config.Callback
 
 	--// Main Window
@@ -128,7 +123,7 @@ function KazeUI:CreateWindow(config)
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Color = Color3.fromRGB(0, 160, 255)
-	WindowStroke.Thickness = 2.5 -- neon thickness
+	WindowStroke.Thickness = 2.5 -- neon thickness (used as reference)
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
@@ -142,7 +137,7 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
 	MakeDraggable(TopBar, Window)
 
-	-- Avatar (circular) to match screenshot
+	-- Avatar
 	local Avatar = Instance.new("ImageLabel")
 	Avatar.Name = "Avatar"
 	Avatar.Size = UDim2.fromOffset(36, 36)
@@ -157,8 +152,7 @@ function KazeUI:CreateWindow(config)
 	avatarStroke.Thickness = 1
 
 	local Icon = Instance.new("ImageLabel")
-	Icon.Size = UDim2.fromOffset(0, 0) -- keep main icon hidden (we use Avatar instead)
-	Icon.Position = UDim2.fromOffset(14, 12)
+	Icon.Size = UDim2.fromOffset(0, 0)
 	Icon.BackgroundTransparency = 1
 	Icon.Image = MainIcon
 	Icon.Parent = TopBar
@@ -185,11 +179,12 @@ function KazeUI:CreateWindow(config)
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
 
-	-- TopBar bottom cyan divider (thin) with glow
+	-- TopBar bottom cyan divider (thin) using stroke so it matches outline thickness visually
 	local TopDivider = Instance.new("Frame")
 	TopDivider.Name = "TopDivider"
-	TopDivider.Size = UDim2.new(1, 0, 0, 3)
-	TopDivider.Position = UDim2.new(0, 0, 1, -3)
+	-- small filled frame (thin) — visual thickness controlled by stroke to match WindowStroke
+	TopDivider.Size = UDim2.new(1, 0, 0, 2)
+	TopDivider.Position = UDim2.new(0, 0, 1, -2)
 	TopDivider.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
@@ -198,12 +193,12 @@ function KazeUI:CreateWindow(config)
 
 	local topDivStroke = Instance.new("UIStroke")
 	topDivStroke.Parent = TopDivider
-	topDivStroke.Color = Color3.fromRGB(0, 200, 255)
-	topDivStroke.Thickness = 2
+	topDivStroke.Color = WindowStroke.Color
+	topDivStroke.Thickness = WindowStroke.Thickness -- match outline thickness
 	topDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(topDivStroke)
 
-	--// Replace text Minimize/Close with "traffic light" circular buttons
+	--// Traffic-light buttons
 	local defaultWindowSize = UDim2.fromOffset(650, 420)
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
@@ -215,43 +210,35 @@ function KazeUI:CreateWindow(config)
 		btn.Name = name
 		btn.Size = UDim2.fromOffset(18, 18)
 		btn.Position = UDim2.new(1, offsetX, 0.5, -9)
-		btn.AnchorPoint = Vector2.new(0, 0)
 		btn.BackgroundColor3 = color
 		btn.BorderSizePixel = 0
 		btn.Text = ""
 		btn.Parent = TopBar
-		local corner = Instance.new("UICorner", btn)
-		corner.CornerRadius = UDim.new(1, 0)
-		-- subtle stroke to match screenshot style
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
 		local stroke = Instance.new("UIStroke", btn)
 		stroke.Color = Color3.fromRGB(0, 0, 0)
 		stroke.Thickness = 1
 		return btn
 	end
 
-	local BtnGreen = createCircleButton("BtnGreen", -120, Color3.fromRGB(117, 204, 50)) -- left-most
-	local BtnYellow = createCircleButton("BtnYellow", -88, Color3.fromRGB(255, 204, 51)) -- middle
-	local BtnRed = createCircleButton("BtnRed", -56, Color3.fromRGB(235, 80, 80)) -- right-most
+	local BtnGreen = createCircleButton("BtnGreen", -120, Color3.fromRGB(117, 204, 50))
+	local BtnYellow = createCircleButton("BtnYellow", -88, Color3.fromRGB(255, 204, 51))
+	local BtnRed = createCircleButton("BtnRed", -56, Color3.fromRGB(235, 80, 80))
 
-	-- Minimize behavior (yellow)
+	-- Minimize behavior (yellow) + MiniButton
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
-	MiniButton.Size = MiniButtonSize -- enforced exact 60x60
-	-- Default position (can be dragged by user)
+	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
-	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- solid background
+	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	MiniButton.BorderSizePixel = 0
 	MiniButton.Visible = false
-	MiniButton.Parent = ScreenGui -- parent directly to ScreenGui to remain visible when Window hidden
-	MiniButton.ZIndex = 999 -- ensure never hidden behind other UI
+	MiniButton.Parent = ScreenGui
+	MiniButton.ZIndex = 999
 	MiniButton.ScaleType = Enum.ScaleType.Slice
 	MiniButton.SliceCenter = Rect.new(4,4,60,60)
+	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 12)
 
-	local miniUICorner = Instance.new("UICorner")
-	miniUICorner.CornerRadius = UDim.new(0, 12)
-	miniUICorner.Parent = MiniButton
-
-	-- Padding so the icon can be large but not cover the neon outline
 	local miniPadding = Instance.new("UIPadding")
 	miniPadding.PaddingTop = UDim.new(0, 4)
 	miniPadding.PaddingBottom = UDim.new(0, 4)
@@ -260,7 +247,6 @@ function KazeUI:CreateWindow(config)
 	miniPadding.Parent = MiniButton
 
 	local MiniIcon = Instance.new("ImageLabel")
-	-- Fill the padded area and center the icon
 	MiniIcon.Size = UDim2.fromScale(1, 1)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -270,76 +256,62 @@ function KazeUI:CreateWindow(config)
 	MiniIcon.ZIndex = 1000
 
 	local MiniStroke = Instance.new("UIStroke")
-	MiniStroke.Color = Color3.fromRGB(0, 160, 255)
-	MiniStroke.Thickness = 2.5 -- neon thickness
-	-- ensure the glow stays on the outside edge
+	MiniStroke.Color = WindowStroke.Color
+	MiniStroke.Thickness = WindowStroke.Thickness
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	MiniStroke.Parent = MiniButton
-	MiniStroke.LineJoinMode = Enum.LineJoinMode.Bevel
 	StartNeonLoop(MiniStroke)
 
-	-- Make both TopBar and MiniButton draggable (MiniButton draggable by itself)
 	MakeDraggable(TopBar, Window)
 	MakeDraggable(MiniButton, MiniButton)
 
-	-- Minimize logic for yellow button
 	local function minimizeWindow()
 		Window.Visible = false
-		-- show the standalone 60x60 ImageButton (ensure exact size)
 		MiniButton.Visible = true
 		MiniButton.Size = UDim2.fromOffset(0, 0)
-		-- fixed: use EasingStyle.Back and EasingDirection.Out instead of non-existent BackOut
 		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
 	end
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- Green button: toggle maximize / restore (store/restore previous normal size/position)
+	-- Green toggle maximize/restore (store previous)
 	BtnGreen.MouseButton1Click:Connect(function()
 		if not toggledMaximized then
-			-- store last normal size/pos/anchor before maximizing
 			lastNormalSize = Window.Size
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
 
 			toggledMaximized = true
-			-- center and expand
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
 			Window.Position = UDim2.fromScale(0.5, 0.5)
 			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromScale(0.9, 0.85)}):Play()
 		else
-			-- restore to last normal
 			toggledMaximized = false
-			-- tween both Size and Position back to stored values
 			local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 			TweenService:Create(Window, tweenInfo, {Size = lastNormalSize, Position = lastNormalPosition}):Play()
-			-- restore anchor after small delay (so position tween works as expected)
 			delay(0.25, function()
 				Window.AnchorPoint = lastNormalAnchor
 			end)
 		end
 	end)
 
-	-- Clicking the 60x60 ImageButton restores the window
+	-- restore from MiniButton respecting maximized flag
 	MiniButton.MouseButton1Click:Connect(function()
 		MiniButton.Visible = false
 		Window.Visible = true
-		-- animate window open from 0 size to the appropriate target based on toggledMaximized
 		Window.Size = UDim2.fromOffset(0, 0)
 		if toggledMaximized then
-			-- restore to maximized size/center
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
 			Window.Position = UDim2.fromScale(0.5, 0.5)
 			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromScale(0.9, 0.85)}):Play()
 		else
-			-- restore to last normal size/position
 			Window.AnchorPoint = lastNormalAnchor
 			Window.Position = lastNormalPosition
 			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = lastNormalSize, Position = lastNormalPosition}):Play()
 		end
 	end)
 
-	-- Close Logic with confirmation overlay (red) with rounded shadow
+	-- Close confirm (red) — improved rounded shadow + matching neon outline on dialog
 	local function ShowCloseConfirm()
 		BtnYellow.Active = false
 		BtnGreen.Active = false
@@ -348,33 +320,35 @@ function KazeUI:CreateWindow(config)
 		Overlay.Size = UDim2.new(1, 0, 1, 0)
 		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		Overlay.BackgroundTransparency = 0.6
-		Overlay.ZIndex = 20
+		Overlay.ZIndex = 50
 		Overlay.Parent = Window
 
-		-- Shadow behind confirm window (rounded)
+		-- Shadow behind confirm window (slightly larger, rounded)
 		local Shadow = Instance.new("Frame")
-		Shadow.Size = UDim2.fromOffset(350, 150)
+		Shadow.Size = UDim2.fromOffset(364, 164) -- slightly larger so rounded shadow visible
 		Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
 		Shadow.Position = UDim2.fromScale(0.5, 0.5)
 		Shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		Shadow.BackgroundTransparency = 0.7
-		Shadow.ZIndex = 21
+		Shadow.BackgroundTransparency = 0.75
+		Shadow.ZIndex = 51
 		Shadow.Parent = Overlay
-		Instance.new("UICorner", Shadow).CornerRadius = UDim.new(0, 12)
+		local shadowCorner = Instance.new("UICorner", Shadow)
+		shadowCorner.CornerRadius = UDim.new(0, 14) -- match dialog rounding
 
 		local ConfirmWindow = Instance.new("Frame")
 		ConfirmWindow.Size = UDim2.fromOffset(350, 150)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.5)
 		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-		ConfirmWindow.ZIndex = 22
+		ConfirmWindow.ZIndex = 52
 		ConfirmWindow.Parent = Overlay
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 12)
 
-		-- subtle neon outline for the confirm window
+		-- neon outline for confirm window (matching WindowStroke)
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
-		confirmStroke.Color = Color3.fromRGB(0, 160, 255)
-		confirmStroke.Thickness = 1.5
+		confirmStroke.Color = WindowStroke.Color
+		confirmStroke.Thickness = 2.5
+		confirmStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		StartNeonLoop(confirmStroke)
 
 		local ConfirmText = Instance.new("TextLabel")
@@ -386,7 +360,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 18
 		ConfirmText.TextWrapped = true
-		ConfirmText.ZIndex = 23
+		ConfirmText.ZIndex = 53
 		ConfirmText.Parent = ConfirmWindow
 
 		local ButtonsFrame = Instance.new("Frame")
@@ -394,7 +368,7 @@ function KazeUI:CreateWindow(config)
 		ButtonsFrame.Position = UDim2.new(0, 0, 1, -20)
 		ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
 		ButtonsFrame.BackgroundTransparency = 1
-		ButtonsFrame.ZIndex = 23
+		ButtonsFrame.ZIndex = 53
 		ButtonsFrame.Parent = ConfirmWindow
 
 		local layout = Instance.new("UIListLayout")
@@ -410,7 +384,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 16
-		ConfirmBtn.ZIndex = 24
+		ConfirmBtn.ZIndex = 54
 		ConfirmBtn.Parent = ButtonsFrame
 		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 8)
 
@@ -421,7 +395,7 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 16
-		CancelBtn.ZIndex = 24
+		CancelBtn.ZIndex = 54
 		CancelBtn.Parent = ButtonsFrame
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
 
@@ -437,7 +411,7 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- Content + left sidebar + vertical cyan divider (glowing) + UICorner fixes
+	-- Content + left sidebar + vertical cyan divider (thin, stroke-matched)
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0, 56)
 	Content.Size = UDim2.new(1, 0, 1, -56)
@@ -446,27 +420,27 @@ function KazeUI:CreateWindow(config)
 
 	local SideBar = Instance.new("Frame")
 	SideBar.Name = "SideBar"
-	SideBar.Size = UDim2.new(0, 180, 1, 0) -- fixed width left panel
+	SideBar.Size = UDim2.new(0, 180, 1, 0)
 	SideBar.Position = UDim2.new(0, 0, 0, 0)
 	SideBar.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	SideBar.BorderSizePixel = 0
 	SideBar.Parent = Content
-	-- ensure Sidebar corners match the main window rounding on the left edge
 	Instance.new("UICorner", SideBar).CornerRadius = UDim.new(0, 14)
 
+	-- thin divider using stroke to match outline thickness
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Name = "VertDivider"
-	VertDivider.Size = UDim2.new(0, 4, 1, 0) -- thin cyan line
+	VertDivider.Size = UDim2.new(0, 2, 1, 0) -- thin filled bar; stroke will give neon thickness
 	VertDivider.Position = UDim2.new(0, 180, 0, 0)
-	VertDivider.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+	VertDivider.BackgroundColor3 = WindowStroke.Color
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
 	Instance.new("UICorner", VertDivider).CornerRadius = UDim.new(0, 6)
 
 	local vertDivStroke = Instance.new("UIStroke")
 	vertDivStroke.Parent = VertDivider
-	vertDivStroke.Color = Color3.fromRGB(0, 200, 255)
-	vertDivStroke.Thickness = 2
+	vertDivStroke.Color = WindowStroke.Color
+	vertDivStroke.Thickness = WindowStroke.Thickness -- match outline thickness
 	vertDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(vertDivStroke)
 
@@ -474,7 +448,6 @@ function KazeUI:CreateWindow(config)
 		pcall(Callback)
 	end
 
-	-- Return main UI handles (including the standalone MiniButton)
 	return {Window = Window, Content = Content, Icon = Avatar, MiniButton = MiniButton, SideBar = SideBar}
 end
 
