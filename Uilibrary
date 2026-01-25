@@ -1,27 +1,29 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
---// Updated: fixed tabs divider seam, tabs + animated indicator, popup API with AddButton and pop animation
---// Notes: CreateWindow will create a normal window. If you pass `Text` in config, CreateWindow will create a centered popup area and you can call :AddButton(...) to add popup buttons (see example usage in conversation).
+--// Updated: shadow rounded corner fix; dividers matching outline (neon stroke thickness/color)
+--// Added: smooth animations for minimize / restore / close
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
--- Services
+--// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 
--- Create ScreenGui
+--// Create ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
--- UIScale for consistent scaling across devices
+--// UIScale for consistent scaling across devices
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
+
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
 	if size.X < 600 then
@@ -33,7 +35,7 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Texture ID Sanitizer
+--// Texture ID Sanitizer
 local function FormatImage(id)
 	if not id then return "" end
 	id = tostring(id)
@@ -42,10 +44,11 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Drag function
+--// Drag Function (works with Mouse and Touch)
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
+
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
@@ -82,7 +85,7 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 end
 
--- neon loop helper
+-- helper for neon tween loops
 local function StartNeonLoop(targetStroke)
 	spawn(function()
 		while targetStroke and targetStroke.Parent do
@@ -93,20 +96,22 @@ local function StartNeonLoop(targetStroke)
 	end)
 end
 
--- CREATE WINDOW
+--// CREATE WINDOW
 function KazeUI:CreateWindow(config)
 	config = config or {}
 
-	-- Main config
+	-- Main Config
 	local Title = config.Title or "Kaze UI"
 	local Author = config.Author or "Unknown"
 	local Version = config.Version or "1.0"
 	local MainIcon = FormatImage(config.Icon or "6031763447")
+
+	-- Open Button Config (ENFORCED to 60x60 for mobile playability)
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	local MiniButtonSize = UDim2.fromOffset(60, 60)
 	local Callback = config.Callback
 
-	-- Main Window
+	--// Main Window
 	local Window = Instance.new("Frame")
 	Window.Name = "MainWindow"
 	Window.Size = UDim2.fromOffset(650, 420)
@@ -118,14 +123,13 @@ function KazeUI:CreateWindow(config)
 	Window.ClipsDescendants = true
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
 
-	-- main neon outline stroke (reference for divider strokes)
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Color = Color3.fromRGB(0, 160, 255)
-	WindowStroke.Thickness = 2.5
+	WindowStroke.Thickness = 2.5 -- neon thickness (used as reference)
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
-	-- TopBar
+	--// Top Bar
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 56)
@@ -149,7 +153,12 @@ function KazeUI:CreateWindow(config)
 	avatarStroke.Color = Color3.fromRGB(0, 140, 200)
 	avatarStroke.Thickness = 1
 
-	-- Title & Sub
+	local Icon = Instance.new("ImageLabel")
+	Icon.Size = UDim2.fromOffset(0, 0)
+	Icon.BackgroundTransparency = 1
+	Icon.Image = MainIcon
+	Icon.Parent = TopBar
+
 	local TitleLabel = Instance.new("TextLabel")
 	TitleLabel.Size = UDim2.new(1, -220, 0, 22)
 	TitleLabel.Position = UDim2.fromOffset(56, 8)
@@ -172,24 +181,26 @@ function KazeUI:CreateWindow(config)
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
 
-	-- Top divider (thin) using stroke matched to WindowStroke thickness (so it visually lines up)
+	-- TopBar bottom cyan divider (thin) using stroke so it matches outline thickness visually
 	local TopDivider = Instance.new("Frame")
 	TopDivider.Name = "TopDivider"
+	-- small filled frame (thin) — visual thickness controlled by stroke to match WindowStroke
 	TopDivider.Size = UDim2.new(1, 0, 0, 2)
 	TopDivider.Position = UDim2.new(0, 0, 1, -2)
-	TopDivider.BackgroundColor3 = WindowStroke.Color
+	TopDivider.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
 	Instance.new("UICorner", TopDivider).CornerRadius = UDim.new(0, 6)
+
 	local topDivStroke = Instance.new("UIStroke")
 	topDivStroke.Parent = TopDivider
 	topDivStroke.Color = WindowStroke.Color
-	topDivStroke.Thickness = WindowStroke.Thickness
+	topDivStroke.Thickness = WindowStroke.Thickness -- match outline thickness
 	topDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(topDivStroke)
 
-	-- Traffic light buttons (green/yellow/red)
+	--// Traffic-light buttons
 	local defaultWindowSize = UDim2.fromOffset(650, 420)
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
@@ -216,12 +227,12 @@ function KazeUI:CreateWindow(config)
 	local BtnYellow = createCircleButton("BtnYellow", -88, Color3.fromRGB(255, 204, 51))
 	local BtnRed = createCircleButton("BtnRed", -56, Color3.fromRGB(235, 80, 80))
 
-	-- MiniButton (60x60) to store minimized UI
+	-- Minimize behavior (yellow) + MiniButton
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
-	MiniButton.BackgroundColor3 = Color3.fromRGB(20,20,25)
+	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	MiniButton.BorderSizePixel = 0
 	MiniButton.Visible = false
 	MiniButton.Parent = ScreenGui
@@ -229,42 +240,84 @@ function KazeUI:CreateWindow(config)
 	MiniButton.ScaleType = Enum.ScaleType.Slice
 	MiniButton.SliceCenter = Rect.new(4,4,60,60)
 	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 12)
-	local miniPadding = Instance.new("UIPadding", MiniButton)
+
+	local miniPadding = Instance.new("UIPadding")
 	miniPadding.PaddingTop = UDim.new(0, 4)
 	miniPadding.PaddingBottom = UDim.new(0, 4)
 	miniPadding.PaddingLeft = UDim.new(0, 4)
 	miniPadding.PaddingRight = UDim.new(0, 4)
-	local MiniIcon = Instance.new("ImageLabel", MiniButton)
+	miniPadding.Parent = MiniButton
+
+	local MiniIcon = Instance.new("ImageLabel")
 	MiniIcon.Size = UDim2.fromScale(1, 1)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
-	MiniIcon.AnchorPoint = Vector2.new(0.5,0.5)
+	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 1
 	MiniIcon.Image = OpenIcon
+	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
-	local MiniStroke = Instance.new("UIStroke", MiniButton)
+
+	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Color = WindowStroke.Color
 	MiniStroke.Thickness = WindowStroke.Thickness
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	MiniStroke.Parent = MiniButton
 	StartNeonLoop(MiniStroke)
 
 	MakeDraggable(TopBar, Window)
 	MakeDraggable(MiniButton, MiniButton)
 
-	-- minimize/restore logic
+	-- Smooth minimize animation: tween Window towards MiniButton (pos + size) then hide window and pop the MiniButton
 	local function minimizeWindow()
+		-- store pre-minimize state if not already stored
+		lastNormalSize = lastNormalSize or Window.Size
+		lastNormalPosition = lastNormalPosition or Window.Position
+		lastNormalAnchor = lastNormalAnchor or Window.AnchorPoint
+
+		-- Ensure MiniButton absolute values are available (wait one frame if needed)
+		if MiniButton.Parent and MiniButton.AbsolutePosition == Vector2.new(0,0) then
+			RunService.RenderStepped:Wait()
+		end
+
+		-- compute target absolute pos/size for the mini
+		local miniAbsPos = MiniButton.AbsolutePosition
+		local miniAbsSize = MiniButton.AbsoluteSize
+
+		-- temporarily set Window anchor to top-left for pixel-based tweening
+		local prevAnchor = Window.AnchorPoint
+		local prevPos = Window.Position
+		local prevSize = Window.Size
+
+		Window.AnchorPoint = Vector2.new(0, 0)
+
+		-- tween Window to MiniButton rect
+		local targetPos = UDim2.fromOffset(miniAbsPos.X, miniAbsPos.Y)
+		local targetSize = UDim2.fromOffset(miniAbsSize.X, miniAbsSize.Y)
+		local tween = TweenService:Create(Window, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {Position = targetPos, Size = targetSize})
+		tween:Play()
+		tween.Completed:Wait()
+
+		-- hide window and animate MiniButton in
 		Window.Visible = false
 		MiniButton.Visible = true
 		MiniButton.Size = UDim2.fromOffset(0, 0)
-		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
+		TweenService:Create(MiniButton, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
+
+		-- restore window anchor/position/size to previous (keep values for restore)
+		Window.AnchorPoint = prevAnchor
+		Window.Position = prevPos
+		Window.Size = prevSize
 	end
+
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- maximize/restore (green)
+	-- Green toggle maximize/restore (store previous)
 	BtnGreen.MouseButton1Click:Connect(function()
 		if not toggledMaximized then
 			lastNormalSize = Window.Size
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
+
 			toggledMaximized = true
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
 			Window.Position = UDim2.fromScale(0.5, 0.5)
@@ -279,134 +332,202 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- restore from mini: respect maximize flag
+	-- Restore from MiniButton respecting maximized flag — spawn window from mini rect
 	MiniButton.MouseButton1Click:Connect(function()
-		MiniButton.Visible = false
+		-- ensure MiniButton absolute values available
+		if MiniButton.Parent and MiniButton.AbsolutePosition == Vector2.new(0,0) then
+			RunService.RenderStepped:Wait()
+		end
+
+		-- get mini rect
+		local miniAbsPos = MiniButton.AbsolutePosition
+		local miniAbsSize = MiniButton.AbsoluteSize
+
+		-- prepare window to animate from mini rect
+		Window.AnchorPoint = Vector2.new(0, 0)
+		Window.Position = UDim2.fromOffset(miniAbsPos.X, miniAbsPos.Y)
+		Window.Size = UDim2.fromOffset(miniAbsSize.X, miniAbsSize.Y)
 		Window.Visible = true
-		Window.Size = UDim2.fromOffset(0, 0)
+
+		-- animate MiniButton shrink (optional) and Window expand simultaneously
+		local miniTween = TweenService:Create(MiniButton, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.fromOffset(0, 0)})
+		miniTween:Play()
+
+		-- target size/position depending on maximized flag
 		if toggledMaximized then
+			-- expand to centered maximized
+			local targetSize = UDim2.fromScale(0.9, 0.85)
+			local targetPos = UDim2.fromScale(0.5, 0.5)
+			-- while tweening, keep anchor at 0.5 so set after a short delay
+			local expandTween = TweenService:Create(Window, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = targetSize, Position = targetPos})
+			expandTween:Play()
+			expandTween.Completed:Wait()
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
-			Window.Position = UDim2.fromScale(0.5, 0.5)
-			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromScale(0.9, 0.85)}):Play()
+			Window.Position = targetPos
+			Window.Size = targetSize
 		else
-			Window.AnchorPoint = lastNormalAnchor
-			Window.Position = lastNormalPosition
-			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = lastNormalSize, Position = lastNormalPosition}):Play()
+			-- expand back to lastNormal
+			local targetSize = lastNormalSize or defaultWindowSize
+			local targetPos = lastNormalPosition or UDim2.fromScale(0.5, 0.5)
+			local expandTween = TweenService:Create(Window, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = targetSize, Position = targetPos})
+			expandTween:Play()
+			expandTween.Completed:Wait()
+			Window.AnchorPoint = lastNormalAnchor or Vector2.new(0.5, 0.5)
+			Window.Position = targetPos
+			Window.Size = targetSize
+		end
+
+		-- hide mini button after restore
+		MiniButton.Visible = false
+		-- restore anchor to lastNormalAnchor if not maximized
+		if not toggledMaximized then
+			Window.AnchorPoint = lastNormalAnchor or Vector2.new(0.5, 0.5)
 		end
 	end)
 
-	-- Close confirm (red) with rounded shadow
+	-- Close Logic with confirmation overlay (red) — improved rounded shadow + matching neon outline on dialog
 	local function ShowCloseConfirm()
 		BtnYellow.Active = false
 		BtnGreen.Active = false
 		BtnRed.Active = false
 		local Overlay = Instance.new("Frame")
-		Overlay.Size = UDim2.new(1,0,1,0)
-		Overlay.BackgroundColor3 = Color3.fromRGB(0,0,0)
+		Overlay.Size = UDim2.new(1, 0, 1, 0)
+		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		Overlay.BackgroundTransparency = 0.6
-		Overlay.ZIndex = 60
+		Overlay.ZIndex = 50
 		Overlay.Parent = Window
 
-		-- Shadow (slightly larger and rounded)
+		-- Shadow behind confirm window (slightly larger, rounded)
 		local Shadow = Instance.new("Frame")
-		Shadow.Size = UDim2.fromOffset(364,164)
-		Shadow.AnchorPoint = Vector2.new(0.5,0.5)
-		Shadow.Position = UDim2.fromScale(0.5,0.5)
-		Shadow.BackgroundColor3 = Color3.fromRGB(0,0,0)
+		Shadow.Size = UDim2.fromOffset(364, 164) -- slightly larger so rounded shadow visible
+		Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+		Shadow.Position = UDim2.fromScale(0.5, 0.5)
+		Shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		Shadow.BackgroundTransparency = 0.75
-		Shadow.ZIndex = 61
+		Shadow.ZIndex = 51
 		Shadow.Parent = Overlay
 		local shadowCorner = Instance.new("UICorner", Shadow)
-		shadowCorner.CornerRadius = UDim.new(0,14)
+		shadowCorner.CornerRadius = UDim.new(0, 14) -- match dialog rounding
 
-		-- Confirm window (rounded)
 		local ConfirmWindow = Instance.new("Frame")
-		ConfirmWindow.Size = UDim2.fromOffset(350,150)
-		ConfirmWindow.AnchorPoint = Vector2.new(0.5,0.5)
-		ConfirmWindow.Position = UDim2.fromScale(0.5,0.5)
-		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
-		ConfirmWindow.ZIndex = 62
+		ConfirmWindow.Size = UDim2.fromOffset(350, 150)
+		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.5)
+		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+		ConfirmWindow.ZIndex = 52
 		ConfirmWindow.Parent = Overlay
-		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0,12)
+		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 12)
 
+		-- neon outline for confirm window (matching WindowStroke)
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
 		confirmStroke.Color = WindowStroke.Color
-		confirmStroke.Thickness = WindowStroke.Thickness
+		confirmStroke.Thickness = 2.5
 		confirmStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		StartNeonLoop(confirmStroke)
 
 		local ConfirmText = Instance.new("TextLabel")
 		ConfirmText.Size = UDim2.new(1, -32, 0, 48)
-		ConfirmText.Position = UDim2.fromOffset(16,20)
+		ConfirmText.Position = UDim2.fromOffset(16, 20)
 		ConfirmText.BackgroundTransparency = 1
 		ConfirmText.Text = "Are you sure you want to close the UI?"
-		ConfirmText.TextColor3 = Color3.fromRGB(230,230,230)
+		ConfirmText.TextColor3 = Color3.fromRGB(230, 230, 230)
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 18
 		ConfirmText.TextWrapped = true
-		ConfirmText.ZIndex = 63
+		ConfirmText.ZIndex = 53
 		ConfirmText.Parent = ConfirmWindow
 
 		local ButtonsFrame = Instance.new("Frame")
 		ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
 		ButtonsFrame.Position = UDim2.new(0, 0, 1, -20)
-		ButtonsFrame.AnchorPoint = Vector2.new(0,1)
+		ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
 		ButtonsFrame.BackgroundTransparency = 1
-		ButtonsFrame.ZIndex = 63
+		ButtonsFrame.ZIndex = 53
 		ButtonsFrame.Parent = ConfirmWindow
 
-		local layout = Instance.new("UIListLayout", ButtonsFrame)
+		local layout = Instance.new("UIListLayout")
+		layout.Parent = ButtonsFrame
 		layout.FillDirection = Enum.FillDirection.Horizontal
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.Padding = UDim.new(0,16)
+		layout.Padding = UDim.new(0, 16)
 
 		local ConfirmBtn = Instance.new("TextButton")
-		ConfirmBtn.Size = UDim2.new(0,120,0,36)
-		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
+		ConfirmBtn.Size = UDim2.new(0, 120, 0, 36)
+		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
 		ConfirmBtn.Text = "Confirm"
-		ConfirmBtn.TextColor3 = Color3.fromRGB(230,230,230)
+		ConfirmBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 16
-		ConfirmBtn.ZIndex = 64
+		ConfirmBtn.ZIndex = 54
 		ConfirmBtn.Parent = ButtonsFrame
-		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0,8)
+		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 8)
 
 		local CancelBtn = Instance.new("TextButton")
-		CancelBtn.Size = UDim2.new(0,120,0,36)
-		CancelBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
+		CancelBtn.Size = UDim2.new(0, 120, 0, 36)
+		CancelBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
 		CancelBtn.Text = "Cancel"
-		CancelBtn.TextColor3 = Color3.fromRGB(220,220,220)
+		CancelBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 16
-		CancelBtn.ZIndex = 64
+		CancelBtn.ZIndex = 54
 		CancelBtn.Parent = ButtonsFrame
-		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
+		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
 
-		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
-		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true end)
+		-- Smooth close animation when Confirm is clicked
+		ConfirmBtn.MouseButton1Click:Connect(function()
+			-- animate confirm window shrink + overlay fade
+			local shrinkTween = TweenService:Create(ConfirmWindow, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.fromOffset(0, 0)})
+			local fadeOverlay = TweenService:Create(Overlay, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1})
+			shrinkTween:Play()
+			fadeOverlay:Play()
+			shrinkTween.Completed:Wait()
+			-- small window shrink of main Window to center then destroy
+			-- make sure Main Window is visible while shrinking
+			if Window and Window.Parent then
+				local prevAnchor = Window.AnchorPoint
+				Window.AnchorPoint = Vector2.new(0.5,0.5)
+				local shrinkMain = TweenService:Create(Window, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.fromOffset(0,0)})
+				shrinkMain:Play()
+				shrinkMain.Completed:Wait()
+			end
+			if ScreenGui and ScreenGui.Parent then
+				ScreenGui:Destroy()
+			end
+		end)
+
+		CancelBtn.MouseButton1Click:Connect(function()
+			Overlay:Destroy()
+			BtnYellow.Active = true
+			BtnGreen.Active = true
+			BtnRed.Active = true
+		end)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- CONTENT LAYOUT
-	-- SideBar is directly under TopBar and shares the same corner radius on the left edges.
+	-- Content + left sidebar + vertical cyan divider (thin, stroke-matched)
+	local Content = Instance.new("Frame")
+	Content.Position = UDim2.fromOffset(0, 56)
+	Content.Size = UDim2.new(1, 0, 1, -56)
+	Content.BackgroundTransparency = 1
+	Content.Parent = Window
+
 	local SideBar = Instance.new("Frame")
 	SideBar.Name = "SideBar"
-	SideBar.Position = UDim2.fromOffset(0, 56)
-	SideBar.Size = UDim2.new(0, 180, 1, -56)
+	SideBar.Size = UDim2.new(0, 180, 1, 0)
+	SideBar.Position = UDim2.new(0, 0, 0, 0)
 	SideBar.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	SideBar.BorderSizePixel = 0
-	SideBar.Parent = Window
+	SideBar.Parent = Content
 	Instance.new("UICorner", SideBar).CornerRadius = UDim.new(0, 14)
 
-	-- Vertical divider: positioned to start below the TopBar so there's no gap ("meron hati" fix).
-	-- It's thin filled bar + stroke matching WindowStroke thickness so it visually lines up with outline.
+	-- thin divider using stroke to match outline thickness
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Name = "VertDivider"
-	VertDivider.Size = UDim2.new(0, 2, 1, -56) -- thin filled area; stroke will give neon thickness
-	VertDivider.Position = UDim2.new(0, 180, 0, 56) -- x = sidebar width, y = topbar height
+	VertDivider.Size = UDim2.new(0, 2, 1, 0) -- thin filled bar; stroke will give neon thickness
+	VertDivider.Position = UDim2.new(0, 180, 0, 0)
 	VertDivider.BackgroundColor3 = WindowStroke.Color
 	VertDivider.BorderSizePixel = 0
-	VertDivider.Parent = Window
+	VertDivider.Parent = Content
 	Instance.new("UICorner", VertDivider).CornerRadius = UDim.new(0, 6)
 
 	local vertDivStroke = Instance.new("UIStroke")
@@ -416,251 +537,11 @@ function KazeUI:CreateWindow(config)
 	vertDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(vertDivStroke)
 
-	-- Main content area (to the right of divider)
-	local Content = Instance.new("Frame")
-	Content.Name = "MainContent"
-	Content.Position = UDim2.new(0, 182, 0, 56) -- right of vertical divider and below topbar
-	Content.Size = UDim2.new(1, -182, 1, -56)
-	Content.BackgroundTransparency = 1
-	Content.Parent = Window
-
-	-- Tabs / Sidebar list
-	local TabsList = Instance.new("Frame")
-	TabsList.Size = UDim2.new(1, 0, 1, 0)
-	TabsList.BackgroundTransparency = 1
-	TabsList.Parent = SideBar
-
-	local tabsLayout = Instance.new("UIListLayout", TabsList)
-	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabsLayout.Padding = UDim.new(0, 10)
-	tabsLayout.FillDirection = Enum.FillDirection.Vertical
-	tabsLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-	-- top padding
-	local tabsPadding = Instance.new("UIPadding", TabsList)
-	tabsPadding.PaddingTop = UDim.new(0, 12)
-	tabsPadding.PaddingLeft = UDim.new(0, 8)
-	tabsPadding.PaddingRight = UDim.new(0, 8)
-
-	-- Active indicator (thin neon bar on the left of the selected tab)
-	local ActiveIndicator = Instance.new("Frame")
-	ActiveIndicator.Size = UDim2.new(0, 4, 0, 40)
-	ActiveIndicator.Position = UDim2.new(0, 0, 0, 56) -- will be updated when first tab is added; initial off-screen
-	ActiveIndicator.BackgroundColor3 = WindowStroke.Color
-	ActiveIndicator.BorderSizePixel = 0
-	ActiveIndicator.ZIndex = 10
-	ActiveIndicator.Parent = Window
-	Instance.new("UICorner", ActiveIndicator).CornerRadius = UDim.new(0, 4)
-	local activeStroke = Instance.new("UIStroke", ActiveIndicator)
-	activeStroke.Color = WindowStroke.Color
-	activeStroke.Thickness = WindowStroke.Thickness
-	activeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	StartNeonLoop(activeStroke)
-
-	-- Tab management
-	local tabs = {}
-	local selectedTab = nil
-
-	local function selectTab(tabButton, contentFrame)
-		if selectedTab == tabButton then return end
-		-- hide previous content
-		for _, t in pairs(tabs) do
-			if t.Content then t.Content.Visible = false end
-		end
-		-- show new
-		if contentFrame then contentFrame.Visible = true end
-		selectedTab = tabButton
-		-- move the ActiveIndicator to match tabButton position
-		local absolute = tabButton.AbsolutePosition
-		local parentAbs = Window.AbsolutePosition
-		local yOffset = absolute.Y - parentAbs.Y
-		TweenService:Create(ActiveIndicator, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0, 0, 0, yOffset + 6), Size = UDim2.new(0, 4, 0, tabButton.AbsoluteSize.Y - 12)}):Play()
-	end
-
-	-- AddTab API on returned object
-	local function AddTab(self, tabConfig)
-		tabConfig = tabConfig or {}
-		local name = tabConfig.Name or "Tab"
-		local icon = FormatImage(tabConfig.Icon or "")
-		local contentFactory = tabConfig.Callback -- function(frame) to populate content
-
-		-- create button
-		local TabButton = Instance.new("TextButton")
-		TabButton.Size = UDim2.new(1, 0, 0, 48)
-		TabButton.BackgroundColor3 = Color3.fromRGB(24,24,28)
-		TabButton.BorderSizePixel = 0
-		TabButton.AutomaticSize = Enum.AutomaticSize.None
-		TabButton.Text = ""
-		TabButton.Parent = TabsList
-		Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 8)
-
-		-- inner icon (optional)
-		if icon ~= "" then
-			local tIcon = Instance.new("ImageLabel")
-			tIcon.Size = UDim2.fromOffset(28, 28)
-			tIcon.Position = UDim2.fromOffset(10, 10)
-			tIcon.BackgroundTransparency = 1
-			tIcon.Image = icon
-			tIcon.Parent = TabButton
-		end
-
-		-- label
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.new(1, -48, 1, 0)
-		label.Position = UDim2.fromOffset(48, 0)
-		label.BackgroundTransparency = 1
-		label.Text = name
-		label.TextColor3 = Color3.fromRGB(210,210,210)
-		label.Font = Enum.Font.Gotham
-		label.TextSize = 14
-		label.TextXAlignment = Enum.TextXAlignment.Left
-		label.Parent = TabButton
-
-		-- content frame
-		local contentFrame = Instance.new("Frame")
-		contentFrame.Size = UDim2.new(1, 0, 1, 0)
-		contentFrame.BackgroundTransparency = 1
-		contentFrame.Parent = Content
-		contentFrame.Visible = false
-
-		-- call factory to populate
-		if typeof(contentFactory) == "function" then
-			pcall(contentFactory, contentFrame)
-		end
-
-		-- keep track
-		table.insert(tabs, {Button = TabButton, Content = contentFrame})
-
-		-- click behavior
-		TabButton.MouseButton1Click:Connect(function()
-			selectTab(TabButton, contentFrame)
-		end)
-
-		-- if first tab, auto-select
-		if #tabs == 1 then
-			-- slight delay to allow layout/absolute size computation
-			delay(0.05, function()
-				selectTab(TabButton, contentFrame)
-			end)
-		end
-
-		return TabButton, contentFrame
-	end
-
-	-- Popup support (if config.Text exists)
-	local popupButtonsFrame = nil
-	local popupFrame = nil
-	local function CreatePopup(text)
-		-- central popup inside Content
-		popupFrame = Instance.new("Frame")
-		popupFrame.Size = UDim2.fromOffset(350, 150)
-		popupFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-		popupFrame.Position = UDim2.fromScale(0.5, 0.5)
-		popupFrame.BackgroundColor3 = Color3.fromRGB(25,25,30)
-		popupFrame.ZIndex = 100
-		popupFrame.Parent = Content
-		Instance.new("UICorner", popupFrame).CornerRadius = UDim.new(0, 12)
-
-		local popupStroke = Instance.new("UIStroke", popupFrame)
-		popupStroke.Color = WindowStroke.Color
-		popupStroke.Thickness = WindowStroke.Thickness
-		popupStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		StartNeonLoop(popupStroke)
-
-		-- text
-		local txtLbl = Instance.new("TextLabel", popupFrame)
-		txtLbl.Size = UDim2.new(1, -32, 0, 72)
-		txtLbl.Position = UDim2.fromOffset(16, 12)
-		txtLbl.BackgroundTransparency = 1
-		txtLbl.Text = text or ""
-		txtLbl.TextColor3 = Color3.fromRGB(240,240,240)
-		txtLbl.Font = Enum.Font.GothamBold
-		txtLbl.TextSize = 16
-		txtLbl.TextWrapped = true
-		txtLbl.TextXAlignment = Enum.TextXAlignment.Center
-		txtLbl.TextYAlignment = Enum.TextYAlignment.Center
-
-		-- buttons frame
-		popupButtonsFrame = Instance.new("Frame")
-		popupButtonsFrame.Size = UDim2.new(1, 0, 0, 48)
-		popupButtonsFrame.Position = UDim2.new(0, 0, 1, -56)
-		popupButtonsFrame.BackgroundTransparency = 1
-		popupButtonsFrame.Parent = popupFrame
-		local btnLayout = Instance.new("UIListLayout", popupButtonsFrame)
-		btnLayout.FillDirection = Enum.FillDirection.Horizontal
-		btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		btnLayout.Padding = UDim.new(0, 16)
-
-		-- pop-in animation
-		popupFrame.Size = UDim2.fromOffset(0, 0)
-		TweenService:Create(popupFrame, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(350, 150)}):Play()
-	end
-
-	-- AddButton method for popups
-	local function AddButton(self, opts)
-		opts = opts or {}
-		local name = opts.Name or "Button"
-		local cb = opts.Callback
-
-		-- if popupButtonsFrame doesn't exist, create popup with default text if provided in config
-		if not popupButtonsFrame then
-			CreatePopup(config.Text or "")
-		end
-
-		local b = Instance.new("TextButton")
-		b.Size = UDim2.new(0, 120, 0, 36)
-		b.BackgroundColor3 = opts.BackgroundColor3 or Color3.fromRGB(0,170,255)
-		b.Text = name
-		b.TextColor3 = opts.TextColor3 or Color3.fromRGB(230,230,230)
-		b.Font = Enum.Font.GothamBold
-		b.TextSize = 16
-		b.ZIndex = 110
-		b.Parent = popupButtonsFrame
-		Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
-
-		b.MouseButton1Click:Connect(function()
-			if typeof(cb) == "function" then
-				pcall(cb)
-			end
-			-- close popup after press
-			if popupFrame then
-				-- animate shrink then destroy
-				local t = TweenService:Create(popupFrame, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.fromOffset(0,0)})
-				t:Play()
-				t.Completed:Connect(function()
-					if popupFrame and popupFrame.Parent then popupFrame:Destroy() end
-					popupFrame = nil
-					popupButtonsFrame = nil
-				end)
-			end
-		end)
-
-		return b
-	end
-
-	-- If the user passed config.Text we create the popup immediately
-	if config.Text then
-		CreatePopup(config.Text)
-	end
-
-	-- Call user callback if provided
 	if typeof(Callback) == "function" then
 		pcall(Callback)
 	end
 
-	-- build return object
-	local uiHandle = {
-		Window = Window,
-		Content = Content,
-		Icon = Avatar,
-		MiniButton = MiniButton,
-		SideBar = SideBar,
-		AddTab = AddTab,
-		AddButton = AddButton,
-		_tabs = tabs -- internal
-	}
-	setmetatable(uiHandle, {__index = KazeUI})
-
-	return uiHandle
+	return {Window = Window, Content = Content, Icon = Avatar, MiniButton = MiniButton, SideBar = SideBar}
 end
 
 return KazeUI
