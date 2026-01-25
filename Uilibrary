@@ -1,6 +1,7 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
 --// Added: Strict Texture ID Sanitizer + 60x60 Minimize ImageButton (draggable, ZIndex 999)
+--// Modified: Replaced text Minimize/Close with three circular "traffic light" buttons (green/yellow/red)
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -146,7 +147,7 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", Icon).CornerRadius = UDim.new(1, 0)
 
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -160, 0, 22)
+	TitleLabel.Size = UDim2.new(1, -180, 0, 22)
 	TitleLabel.Position = UDim2.fromOffset(56, 8)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
@@ -157,7 +158,7 @@ function KazeUI:CreateWindow(config)
 	TitleLabel.Parent = TopBar
 
 	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(1, -160, 0, 18)
+	SubLabel.Size = UDim2.new(1, -180, 0, 18)
 	SubLabel.Position = UDim2.fromOffset(56, 30)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " | v" .. Version
@@ -167,35 +168,34 @@ function KazeUI:CreateWindow(config)
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
 
-	local Minimize = Instance.new("TextButton")
-	Minimize.Size = UDim2.fromOffset(36, 36)
-	Minimize.Position = UDim2.new(1, -88, 0.5, -18)
-	Minimize.Text = "—"
-	Minimize.Font = Enum.Font.GothamBold
-	Minimize.TextSize = 20
-	Minimize.TextColor3 = Color3.fromRGB(220, 220, 220)
-	Minimize.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-	Minimize.Parent = TopBar
-	Instance.new("UICorner", Minimize).CornerRadius = UDim.new(1, 0)
+	--// Replace text Minimize/Close with "traffic light" circular buttons
+	local defaultWindowSize = UDim2.fromOffset(650, 420)
+	local toggledMaximized = false
 
-	local Close = Instance.new("TextButton")
-	Close.Size = UDim2.fromOffset(36, 36)
-	Close.Position = UDim2.new(1, -44, 0.5, -18)
-	Close.Text = "✕"
-	Close.Font = Enum.Font.GothamBold
-	Close.TextSize = 18
-	Close.TextColor3 = Color3.fromRGB(255, 90, 90)
-	Close.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-	Close.Parent = TopBar
-	Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
+	local function createCircleButton(name, offsetX, color)
+		local btn = Instance.new("TextButton")
+		btn.Name = name
+		btn.Size = UDim2.fromOffset(18, 18)
+		btn.Position = UDim2.new(1, offsetX, 0.5, -9)
+		btn.AnchorPoint = Vector2.new(0, 0)
+		btn.BackgroundColor3 = color
+		btn.BorderSizePixel = 0
+		btn.Text = ""
+		btn.Parent = TopBar
+		local corner = Instance.new("UICorner", btn)
+		corner.CornerRadius = UDim.new(1, 0)
+		-- subtle stroke to match screenshot style
+		local stroke = Instance.new("UIStroke", btn)
+		stroke.Color = Color3.fromRGB(0, 0, 0)
+		stroke.Thickness = 1
+		return btn
+	end
 
-	local Content = Instance.new("Frame")
-	Content.Position = UDim2.fromOffset(0, 56)
-	Content.Size = UDim2.new(1, 0, 1, -56)
-	Content.BackgroundTransparency = 1
-	Content.Parent = Window
+	local BtnGreen = createCircleButton("BtnGreen", -120, Color3.fromRGB(117, 204, 50)) -- left-most
+	local BtnYellow = createCircleButton("BtnYellow", -88, Color3.fromRGB(255, 204, 51)) -- middle
+	local BtnRed = createCircleButton("BtnRed", -56, Color3.fromRGB(235, 80, 80)) -- right-most
 
-	--// MINI BUTTON (60x60 Square ImageButton)
+	-- Minimize behavior (yellow)
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize -- enforced exact 60x60
@@ -251,15 +251,17 @@ function KazeUI:CreateWindow(config)
 	MakeDraggable(TopBar, Window)
 	MakeDraggable(MiniButton, MiniButton)
 
-	-- Minimize behavior: hide Window, show 60x60 ImageButton (parented to ScreenGui)
-	Minimize.MouseButton1Click:Connect(function()
+	-- Minimize logic for yellow button
+	local function minimizeWindow()
 		Window.Visible = false
 		-- show the standalone 60x60 ImageButton (ensure exact size)
 		MiniButton.Visible = true
 		MiniButton.Size = UDim2.fromOffset(0, 0)
 		-- fixed: use EasingStyle.Back and EasingDirection.Out instead of non-existent BackOut
 		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
-	end)
+	end
+
+	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
 	-- Clicking the 60x60 ImageButton restores the window
 	MiniButton.MouseButton1Click:Connect(function()
@@ -268,13 +270,29 @@ function KazeUI:CreateWindow(config)
 		-- animate window open from 0 size to the main size
 		Window.Size = UDim2.fromOffset(0, 0)
 		-- fixed: use EasingStyle.Back and EasingDirection.Out instead of non-existent BackOut
-		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(650, 420)}):Play()
+		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = defaultWindowSize}):Play()
 	end)
 
-	-- Close Logic with confirmation overlay
+	-- Green button: toggle maximize / restore
+	BtnGreen.MouseButton1Click:Connect(function()
+		if not toggledMaximized then
+			-- expand to a larger size (keeping some margin)
+			toggledMaximized = true
+			-- center and expand
+			Window.Position = UDim2.fromScale(0.5, 0.5)
+			Window.AnchorPoint = Vector2.new(0.5, 0.5)
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromScale(0.9, 0.85)}):Play()
+		else
+			toggledMaximized = false
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = defaultWindowSize}):Play()
+		end
+	end)
+
+	-- Close Logic with confirmation overlay (red)
 	local function ShowCloseConfirm()
-		Minimize.Active = false
-		Close.Active = false
+		BtnYellow.Active = false
+		BtnGreen.Active = false
+		BtnRed.Active = false
 		local Overlay = Instance.new("Frame")
 		Overlay.Size = UDim2.new(1, 0, 1, 0)
 		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -344,11 +362,18 @@ function KazeUI:CreateWindow(config)
 		end)
 		CancelBtn.MouseButton1Click:Connect(function()
 			Overlay:Destroy()
-			Minimize.Active = true
-			Close.Active = true
+			BtnYellow.Active = true
+			BtnGreen.Active = true
+			BtnRed.Active = true
 		end)
 	end
-	Close.MouseButton1Click:Connect(ShowCloseConfirm)
+	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
+
+	local Content = Instance.new("Frame")
+	Content.Position = UDim2.fromOffset(0, 56)
+	Content.Size = UDim2.new(1, 0, 1, -56)
+	Content.BackgroundTransparency = 1
+	Content.Parent = Window
 
 	if typeof(Callback) == "function" then
 		pcall(Callback)
