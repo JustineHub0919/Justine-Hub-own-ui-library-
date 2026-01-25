@@ -1,6 +1,6 @@
--- Kaze UI Base (Improved)
+-- Kaze UI Base (Improved, Full Script)
 -- Window System (PC + Mobile)
--- Added: Responsive sizing for PC/Mobile, Multi-Tab support (CreateTab), bug fixes and safety improvements.
+-- Responsive sizing for PC/Mobile, Multi-Tab support (CreateTab), bug fixes and safety improvements.
 -- Usage:
 -- local UI = KazeUI:CreateWindow{ Title = "My UI", Icon = "6031763447" }
 -- local MainTab = UI:CreateTab("Main", "rbxassetid://6031763447")
@@ -416,22 +416,51 @@ function KazeUI:CreateWindow(config)
 	local function SetActiveTab(tabObject)
 		-- hide all pages, de-highlight buttons
 		for _, t in ipairs(tabs) do
-			t.Content.Visible = false
-			t.Button.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
-			t.Button.TextColor3 = Color3.fromRGB(220, 220, 220)
+			if t.Content then
+				t.Content.Visible = false
+			end
+			if t.Button then
+				t.Button.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
+				t.Button.TextColor3 = Color3.fromRGB(220, 220, 220)
+			end
 		end
 		-- show the requested
 		if tabObject then
-			tabObject.Content.Visible = true
-			tabObject.Button.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
-			tabObject.Button.TextColor3 = Color3.fromRGB(10, 10, 10)
-			activeTabButton = tabObject.Button
+			if tabObject.Content then
+				tabObject.Content.Visible = true
+			end
+			if tabObject.Button then
+				tabObject.Button.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+				tabObject.Button.TextColor3 = Color3.fromRGB(10, 10, 10)
+				activeTabButton = tabObject.Button
+			end
 		end
 	end
 
-	-- CreateTab function exposed on returned object
-	local function CreateTab(title, icon)
+	-- Corrected CreateTab function supporting both (string, icon) and table config
+	local function CreateTab(tabArg, iconArg)
+		-- Normalize inputs: support CreateTab("Title", "icon") and CreateTab({ Name = "...", Icon = "..." })
+		local title, icon = nil, nil
+
+		if typeof(tabArg) == "table" then
+			-- prefer several common keys
+			title = tabArg.Name or tabArg.Title or tabArg.Text or tabArg.name or tabArg.title or tabArg.text
+			icon  = tabArg.Icon or tabArg.Image or tabArg.icon or tabArg.image or iconArg
+		else
+			title = tabArg
+			icon  = iconArg
+		end
+
+		-- Fallback title if nothing valid provided
+		if title == nil or title == "" then
+			title = "Tab " .. tostring(#tabs + 1)
+		end
+
+		-- Ensure it's always a string (prevents assigning a table to .Text)
+		title = tostring(title)
+
 		local iconImage = FormatImage(icon or "")
+
 		local tabIndex = #tabs + 1
 
 		-- Create the button
@@ -440,7 +469,7 @@ function KazeUI:CreateWindow(config)
 		Btn.Size = UDim2.new(1, -20, 0, 56)
 		Btn.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
 		Btn.BorderSizePixel = 0
-		Btn.Text = title or ("Tab " .. tostring(tabIndex))
+		Btn.Text = title -- safe: title is a string
 		Btn.TextColor3 = Color3.fromRGB(220, 220, 220)
 		Btn.Font = Enum.Font.GothamBold
 		Btn.TextSize = 16
@@ -484,7 +513,11 @@ function KazeUI:CreateWindow(config)
 
 		-- Update the scrollbar canvas size after a short delay
 		task.defer(function()
-			TabsScroll.CanvasSize = UDim2.new(0, 0, 0, TabsLayout.AbsoluteContentSize.Y + 12)
+			if TabsLayout and TabsLayout.AbsoluteContentSize then
+				TabsScroll.CanvasSize = UDim2.new(0, 0, 0, TabsLayout.AbsoluteContentSize.Y + 12)
+			else
+				TabsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+			end
 		end)
 
 		-- When button clicked, set active
