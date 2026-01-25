@@ -1,7 +1,7 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
 --// Added: Strict Texture ID Sanitizer + 60x60 Minimize ImageButton (draggable, ZIndex 999)
---// Modified: Replaced text Minimize/Close with three circular "traffic light" buttons (green/yellow/red)
+--// Modified: traffic-light buttons persist across minimize/restore; added avatar, top divider, left sidebar + vertical divider
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -138,16 +138,29 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
 	MakeDraggable(TopBar, Window)
 
+	-- Avatar (circular) to match screenshot
+	local Avatar = Instance.new("ImageLabel")
+	Avatar.Name = "Avatar"
+	Avatar.Size = UDim2.fromOffset(36, 36)
+	Avatar.Position = UDim2.fromOffset(12, 10)
+	Avatar.BackgroundTransparency = 0
+	Avatar.BackgroundColor3 = Color3.fromRGB(30,30,35)
+	Avatar.Image = MainIcon
+	Avatar.Parent = TopBar
+	Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1, 0)
+	local avatarStroke = Instance.new("UIStroke", Avatar)
+	avatarStroke.Color = Color3.fromRGB(0, 140, 200)
+	avatarStroke.Thickness = 1
+
 	local Icon = Instance.new("ImageLabel")
-	Icon.Size = UDim2.fromOffset(32, 32)
+	Icon.Size = UDim2.fromOffset(0, 0) -- keep main icon hidden (we use Avatar instead)
 	Icon.Position = UDim2.fromOffset(14, 12)
 	Icon.BackgroundTransparency = 1
 	Icon.Image = MainIcon
 	Icon.Parent = TopBar
-	Instance.new("UICorner", Icon).CornerRadius = UDim.new(1, 0)
 
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -180, 0, 22)
+	TitleLabel.Size = UDim2.new(1, -220, 0, 22)
 	TitleLabel.Position = UDim2.fromOffset(56, 8)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
@@ -158,7 +171,7 @@ function KazeUI:CreateWindow(config)
 	TitleLabel.Parent = TopBar
 
 	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(1, -180, 0, 18)
+	SubLabel.Size = UDim2.new(1, -220, 0, 18)
 	SubLabel.Position = UDim2.fromOffset(56, 30)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " | v" .. Version
@@ -168,8 +181,21 @@ function KazeUI:CreateWindow(config)
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
 
+	-- TopBar bottom cyan divider (thin)
+	local TopDivider = Instance.new("Frame")
+	TopDivider.Name = "TopDivider"
+	TopDivider.Size = UDim2.new(1, 0, 0, 3)
+	TopDivider.Position = UDim2.new(0, 0, 1, -3)
+	TopDivider.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+	TopDivider.BorderSizePixel = 0
+	TopDivider.ZIndex = 5
+	TopDivider.Parent = TopBar
+
 	--// Replace text Minimize/Close with "traffic light" circular buttons
 	local defaultWindowSize = UDim2.fromOffset(650, 420)
+	local lastNormalSize = defaultWindowSize
+	local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
+	local lastNormalAnchor = Vector2.new(0.5, 0.5)
 	local toggledMaximized = false
 
 	local function createCircleButton(name, offsetX, color)
@@ -263,28 +289,48 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
+	-- Green button: toggle maximize / restore (store/restore previous normal size/position)
+	BtnGreen.MouseButton1Click:Connect(function()
+		if not toggledMaximized then
+			-- store last normal size/pos/anchor before maximizing
+			lastNormalSize = Window.Size
+			lastNormalPosition = Window.Position
+			lastNormalAnchor = Window.AnchorPoint
+
+			toggledMaximized = true
+			-- center and expand
+			Window.AnchorPoint = Vector2.new(0.5, 0.5)
+			Window.Position = UDim2.fromScale(0.5, 0.5)
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromScale(0.9, 0.85)}):Play()
+		else
+			-- restore to last normal
+			toggledMaximized = false
+			-- tween both Size and Position back to stored values
+			local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			TweenService:Create(Window, tweenInfo, {Size = lastNormalSize, Position = lastNormalPosition}):Play()
+			-- restore anchor after small delay (so position tween works as expected)
+			delay(0.25, function()
+				Window.AnchorPoint = lastNormalAnchor
+			end)
+		end
+	end)
+
 	-- Clicking the 60x60 ImageButton restores the window
 	MiniButton.MouseButton1Click:Connect(function()
 		MiniButton.Visible = false
 		Window.Visible = true
-		-- animate window open from 0 size to the main size
+		-- animate window open from 0 size to the appropriate target based on toggledMaximized
 		Window.Size = UDim2.fromOffset(0, 0)
-		-- fixed: use EasingStyle.Back and EasingDirection.Out instead of non-existent BackOut
-		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = defaultWindowSize}):Play()
-	end)
-
-	-- Green button: toggle maximize / restore
-	BtnGreen.MouseButton1Click:Connect(function()
-		if not toggledMaximized then
-			-- expand to a larger size (keeping some margin)
-			toggledMaximized = true
-			-- center and expand
-			Window.Position = UDim2.fromScale(0.5, 0.5)
+		if toggledMaximized then
+			-- restore to maximized size/center
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromScale(0.9, 0.85)}):Play()
+			Window.Position = UDim2.fromScale(0.5, 0.5)
+			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromScale(0.9, 0.85)}):Play()
 		else
-			toggledMaximized = false
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = defaultWindowSize}):Play()
+			-- restore to last normal size/position
+			Window.AnchorPoint = lastNormalAnchor
+			Window.Position = lastNormalPosition
+			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = lastNormalSize, Position = lastNormalPosition}):Play()
 		end
 	end)
 
@@ -369,18 +415,35 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
+	-- Content + left sidebar + vertical cyan divider
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0, 56)
 	Content.Size = UDim2.new(1, 0, 1, -56)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
 
+	local SideBar = Instance.new("Frame")
+	SideBar.Name = "SideBar"
+	SideBar.Size = UDim2.new(0, 180, 1, 0) -- fixed width left panel
+	SideBar.Position = UDim2.new(0, 0, 0, 0)
+	SideBar.BackgroundColor3 = Color3.fromRGB(20,20,25)
+	SideBar.BorderSizePixel = 0
+	SideBar.Parent = Content
+
+	local VertDivider = Instance.new("Frame")
+	VertDivider.Name = "VertDivider"
+	VertDivider.Size = UDim2.new(0, 4, 1, 0) -- thin cyan line
+	VertDivider.Position = UDim2.new(0, 180, 0, 0)
+	VertDivider.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+	VertDivider.BorderSizePixel = 0
+	VertDivider.Parent = Content
+
 	if typeof(Callback) == "function" then
 		pcall(Callback)
 	end
 
 	-- Return main UI handles (including the standalone MiniButton)
-	return {Window = Window, Content = Content, Icon = Icon, MiniButton = MiniButton}
+	return {Window = Window, Content = Content, Icon = Avatar, MiniButton = MiniButton, SideBar = SideBar}
 end
 
 return KazeUI
